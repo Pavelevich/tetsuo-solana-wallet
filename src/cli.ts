@@ -614,8 +614,54 @@ async function interactivePrompt(): Promise<string> {
     stdin.setRawMode(true);
     stdin.resume();
 
+    let escapeBuffer = '';
+    let escapeTimeout: NodeJS.Timeout | null = null;
+
+    const processEscapeSequence = (seq: string) => {
+      if (seq === '\x1B[A') { // Up arrow
+        if (menuVisible) {
+          selectedIndex = Math.max(0, selectedIndex - 1);
+          updateMenu();
+        }
+      } else if (seq === '\x1B[B') { // Down arrow
+        if (menuVisible) {
+          const filtered = getFilteredCommands();
+          selectedIndex = Math.min(filtered.length - 1, selectedIndex + 1);
+          updateMenu();
+        }
+      } else if (seq === '\x1B' || seq === '\x1B[' || seq === '\x1B[C' || seq === '\x1B[D') {
+        // ESC alone or left/right arrows - just close menu if ESC
+        if (seq === '\x1B' && menuVisible) {
+          hideMenu();
+        }
+      }
+      escapeBuffer = '';
+    };
+
     const onKeypress = (key: Buffer) => {
       const char = key.toString();
+
+      // Handle escape sequences (arrow keys, ESC)
+      if (char === '\x1B' || escapeBuffer.length > 0) {
+        escapeBuffer += char;
+
+        // Clear any existing timeout
+        if (escapeTimeout) {
+          clearTimeout(escapeTimeout);
+        }
+
+        // Check if we have a complete sequence
+        if (escapeBuffer.length >= 3 && escapeBuffer.startsWith('\x1B[')) {
+          processEscapeSequence(escapeBuffer);
+          return;
+        }
+
+        // Set timeout for standalone ESC
+        escapeTimeout = setTimeout(() => {
+          processEscapeSequence(escapeBuffer);
+        }, 50);
+        return;
+      }
 
       // Handle special keys
       if (char === '\x03') { // Ctrl+C
@@ -625,37 +671,15 @@ async function interactivePrompt(): Promise<string> {
         process.exit(0);
       }
 
-      if (char === '\x1B') { // ESC or arrow key sequence
-        // Check if it's an arrow key (ESC [ A/B/C/D)
-        return; // Will be handled in sequence
-      }
-
-      // Arrow key sequences
-      if (char === '\x1B[A') { // Up arrow
-        if (menuVisible) {
-          selectedIndex = Math.max(0, selectedIndex - 1);
-          updateMenu();
-        }
-        return;
-      }
-
-      if (char === '\x1B[B') { // Down arrow
-        if (menuVisible) {
-          const filtered = getFilteredCommands();
-          selectedIndex = Math.min(filtered.length - 1, selectedIndex + 1);
-          updateMenu();
-        }
-        return;
-      }
-
       if (char === '\r' || char === '\n') { // Enter
+        const wasMenuVisible = menuVisible;
         hideMenu();
         stdout.write('\n');
         stdin.setRawMode(false);
         stdin.removeListener('data', onKeypress);
 
         // If menu was visible, use selected command
-        if (input === '/' || (input.startsWith('/') && menuVisible)) {
+        if (wasMenuVisible && input.startsWith('/')) {
           const filtered = getFilteredCommands();
           if (filtered.length > 0 && selectedIndex < filtered.length) {
             resolve('/' + filtered[selectedIndex].name);
@@ -681,15 +705,8 @@ async function interactivePrompt(): Promise<string> {
         return;
       }
 
-      if (char === '\x1B') { // ESC (standalone)
-        if (menuVisible) {
-          hideMenu();
-        }
-        return;
-      }
-
-      // Regular character input
-      if (char >= ' ' && char <= '~') {
+      // Regular character input (printable ASCII)
+      if (char.length === 1 && char >= ' ' && char <= '~') {
         input += char;
         redrawPrompt();
 
