@@ -2,6 +2,7 @@
   "name": "tetsuo-solana-wallet",
   "version": "1.0.0",
   "description": "Secure CLI wallet for TETSUO on Solana with Grok AI assistant",
+  "type": "module",
   "main": "dist/index.js",
   "bin": {
     "tetsuo": "./dist/cli.js"

@@ -103,7 +103,7 @@ export class GrokClient {
         throw new Error(`Grok API error: ${response.status}`);
       }
 
-      const data = await response.json();
+      const data = await response.json() as { choices: { message: { content: string } }[] };
       const content = data.choices[0]?.message?.content || '';
 
       this.conversationHistory.push({
