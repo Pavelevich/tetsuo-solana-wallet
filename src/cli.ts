@@ -413,9 +413,13 @@ registerCommand({
         // Clear and draw
         console.clear();
         console.log();
-        console.log(chalk.green('  ┌─────────────────────────────────────────────────────────┐'));
-        console.log(chalk.green('  │') + chalk.bold.white('            ◈  T E T S U O   T R A D I N G  ◈             ') + chalk.green('│'));
-        console.log(chalk.green('  └─────────────────────────────────────────────────────────┘'));
+        const W = 59;
+        const title = '◈  T E T S U O   T R A D I N G  ◈';
+        const pad = Math.floor((W - title.length) / 2);
+        const padR = W - title.length - pad;
+        console.log(chalk.green('  ┌' + '─'.repeat(W) + '┐'));
+        console.log(chalk.green('  │') + ' '.repeat(pad) + chalk.bold.white(title) + ' '.repeat(padR) + chalk.green('│'));
+        console.log(chalk.green('  └' + '─'.repeat(W) + '┘'));
         console.log();
 
         // Price
