@@ -88,25 +88,91 @@ export function formatBalance(
 }
 
 /**
- * Print balance card
+ * Print balance card - Premium design
  */
 export function printBalanceCard(
   tetsuoBalance: string,
   solBalance: string,
   address: string
 ): void {
-  const content = `
-${chalk.gray('TETSUO Balance')}
-${chalk.bold.green(tetsuoBalance)} ${chalk.cyan('TETSUO')}
+  const width = 52;
+  const line = chalk.gray('─'.repeat(width));
+  const doubleLine = chalk.gray('═'.repeat(width));
 
-${chalk.gray('SOL Balance')}
-${chalk.bold.yellow(solBalance)} ${chalk.yellow('SOL')}
+  // Format balances with proper alignment
+  const tetsuoNum = parseFloat(tetsuoBalance.replace(/,/g, '')) || 0;
+  const solNum = parseFloat(solBalance) || 0;
 
-${chalk.gray('Address')}
-${chalk.dim(address)}
-`;
+  // Format with commas and decimals
+  const formatBalance = (num: number, decimals: number = 4): string => {
+    return num.toLocaleString('en-US', {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals
+    });
+  };
 
-  console.log(box(content, 'Wallet Balance'));
+  const tetsuoFormatted = formatBalance(tetsuoNum, 2);
+  const solFormatted = formatBalance(solNum, 4);
+
+  console.log();
+  console.log(chalk.cyan('  ╔' + '═'.repeat(width) + '╗'));
+  console.log(chalk.cyan('  ║') + ' '.repeat(width) + chalk.cyan('║'));
+
+  // Title
+  const title = 'W A L L E T   B A L A N C E';
+  const titlePad = Math.floor((width - title.length) / 2);
+  console.log(chalk.cyan('  ║') + ' '.repeat(titlePad) + chalk.bold.white(title) + ' '.repeat(width - titlePad - title.length) + chalk.cyan('║'));
+
+  console.log(chalk.cyan('  ║') + ' '.repeat(width) + chalk.cyan('║'));
+  console.log(chalk.cyan('  ╠') + '═'.repeat(width) + chalk.cyan('╣'));
+  console.log(chalk.cyan('  ║') + ' '.repeat(width) + chalk.cyan('║'));
+
+  // TETSUO Balance - Main highlight
+  const tetsuoLabel = 'TETSUO';
+  const tetsuoLine = `  ${tetsuoFormatted}  ${tetsuoLabel}`;
+  const tetsuoPad = width - tetsuoLine.length + 2;
+  console.log(
+    chalk.cyan('  ║') +
+    '  ' +
+    chalk.bold.green(tetsuoFormatted) +
+    '  ' +
+    chalk.cyan(tetsuoLabel) +
+    ' '.repeat(Math.max(0, tetsuoPad)) +
+    chalk.cyan('║')
+  );
+
+  console.log(chalk.cyan('  ║') + ' '.repeat(width) + chalk.cyan('║'));
+  console.log(chalk.cyan('  ║') + '  ' + chalk.gray('─'.repeat(width - 4)) + '  ' + chalk.cyan('║'));
+  console.log(chalk.cyan('  ║') + ' '.repeat(width) + chalk.cyan('║'));
+
+  // SOL Balance
+  const solLabel = 'SOL';
+  const solLine = `  ${solFormatted}  ${solLabel}`;
+  const solPad = width - solLine.length + 2;
+  console.log(
+    chalk.cyan('  ║') +
+    '  ' +
+    chalk.bold.yellow(solFormatted) +
+    '  ' +
+    chalk.yellow(solLabel) +
+    ' '.repeat(Math.max(0, solPad)) +
+    chalk.cyan('║')
+  );
+
+  console.log(chalk.cyan('  ║') + ' '.repeat(width) + chalk.cyan('║'));
+  console.log(chalk.cyan('  ╠') + '═'.repeat(width) + chalk.cyan('╣'));
+  console.log(chalk.cyan('  ║') + ' '.repeat(width) + chalk.cyan('║'));
+
+  // Address
+  const addrLabel = 'Address';
+  console.log(chalk.cyan('  ║') + '  ' + chalk.gray(addrLabel) + ' '.repeat(width - addrLabel.length - 2) + chalk.cyan('║'));
+
+  const addrPad = width - address.length - 2;
+  console.log(chalk.cyan('  ║') + '  ' + chalk.white(address) + ' '.repeat(Math.max(0, addrPad)) + chalk.cyan('║'));
+
+  console.log(chalk.cyan('  ║') + ' '.repeat(width) + chalk.cyan('║'));
+  console.log(chalk.cyan('  ╚') + '═'.repeat(width) + chalk.cyan('╝'));
+  console.log();
 }
 
 /**
@@ -166,25 +232,76 @@ export function printInfo(message: string): void {
 }
 
 /**
- * Print QR code placeholder (ASCII)
+ * Print receive address card - Premium design
  */
 export function printQRCode(address: string): void {
-  // Simple ASCII QR representation (actual QR generation would need a library)
-  const qrPlaceholder = `
-  ██████████████████████████
-  ██                      ██
-  ██  ████████████████    ██
-  ██  ██            ██    ██
-  ██  ██  ████████  ██    ██
-  ██  ██  ██    ██  ██    ██
-  ██  ██  ████████  ██    ██
-  ██  ██            ██    ██
-  ██  ████████████████    ██
-  ██                      ██
-  ██████████████████████████
-`;
+  const width = 52;
 
-  console.log(box(chalk.white(qrPlaceholder) + '\n' + chalk.cyan(address), 'Scan to Send TETSUO'));
+  console.log();
+  console.log(chalk.magenta('  ╔' + '═'.repeat(width) + '╗'));
+  console.log(chalk.magenta('  ║') + ' '.repeat(width) + chalk.magenta('║'));
+
+  // Title
+  const title = 'R E C E I V E   T E T S U O';
+  const titlePad = Math.floor((width - title.length) / 2);
+  console.log(chalk.magenta('  ║') + ' '.repeat(titlePad) + chalk.bold.white(title) + ' '.repeat(width - titlePad - title.length) + chalk.magenta('║'));
+
+  console.log(chalk.magenta('  ║') + ' '.repeat(width) + chalk.magenta('║'));
+  console.log(chalk.magenta('  ╠') + '═'.repeat(width) + chalk.magenta('╣'));
+  console.log(chalk.magenta('  ║') + ' '.repeat(width) + chalk.magenta('║'));
+
+  // QR-like pattern (stylized)
+  const qrLines = [
+    '█▀▀▀▀▀█ ▄▄▄▀▀ █▀▀▀▀▀█',
+    '█ ███ █ ▀▄█▀▄ █ ███ █',
+    '█ ▀▀▀ █ ▀▄▀▄▀ █ ▀▀▀ █',
+    '▀▀▀▀▀▀▀ █▀█▀█ ▀▀▀▀▀▀▀',
+    '▀▀▀▄▄▀▀▀▄▀▄▀▄▀▀▄▄▀▀▀▀',
+    '█▀▀▀▀▀█ ▀▄▀▄▀ █▀▀▀▀▀█',
+    '█ ███ █ █▀▄▀█ █ ███ █',
+    '█ ▀▀▀ █ ▀▄▀▄▀ █ ▀▀▀ █',
+    '▀▀▀▀▀▀▀ ▀▀▀▀▀ ▀▀▀▀▀▀▀'
+  ];
+
+  qrLines.forEach(line => {
+    const qrPad = Math.floor((width - line.length) / 2);
+    console.log(chalk.magenta('  ║') + ' '.repeat(qrPad) + chalk.white(line) + ' '.repeat(width - qrPad - line.length) + chalk.magenta('║'));
+  });
+
+  console.log(chalk.magenta('  ║') + ' '.repeat(width) + chalk.magenta('║'));
+  console.log(chalk.magenta('  ╠') + '═'.repeat(width) + chalk.magenta('╣'));
+  console.log(chalk.magenta('  ║') + ' '.repeat(width) + chalk.magenta('║'));
+
+  // Address label
+  const label = 'Your Solana Address:';
+  console.log(chalk.magenta('  ║') + '  ' + chalk.gray(label) + ' '.repeat(width - label.length - 2) + chalk.magenta('║'));
+  console.log(chalk.magenta('  ║') + ' '.repeat(width) + chalk.magenta('║'));
+
+  // Address (might need to wrap if too long)
+  if (address.length <= width - 4) {
+    const addrPad = Math.floor((width - address.length) / 2);
+    console.log(chalk.magenta('  ║') + ' '.repeat(addrPad) + chalk.bold.cyan(address) + ' '.repeat(width - addrPad - address.length) + chalk.magenta('║'));
+  } else {
+    // Split address
+    const mid = Math.floor(address.length / 2);
+    const part1 = address.substring(0, mid);
+    const part2 = address.substring(mid);
+    const pad1 = Math.floor((width - part1.length) / 2);
+    const pad2 = Math.floor((width - part2.length) / 2);
+    console.log(chalk.magenta('  ║') + ' '.repeat(pad1) + chalk.bold.cyan(part1) + ' '.repeat(width - pad1 - part1.length) + chalk.magenta('║'));
+    console.log(chalk.magenta('  ║') + ' '.repeat(pad2) + chalk.bold.cyan(part2) + ' '.repeat(width - pad2 - part2.length) + chalk.magenta('║'));
+  }
+
+  console.log(chalk.magenta('  ║') + ' '.repeat(width) + chalk.magenta('║'));
+
+  // Copy hint
+  const hint = 'Copy and share this address to receive tokens';
+  const hintPad = Math.floor((width - hint.length) / 2);
+  console.log(chalk.magenta('  ║') + ' '.repeat(hintPad) + chalk.dim(hint) + ' '.repeat(width - hintPad - hint.length) + chalk.magenta('║'));
+
+  console.log(chalk.magenta('  ║') + ' '.repeat(width) + chalk.magenta('║'));
+  console.log(chalk.magenta('  ╚') + '═'.repeat(width) + chalk.magenta('╝'));
+  console.log();
 }
 
 /**
