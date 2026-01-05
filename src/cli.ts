@@ -471,50 +471,6 @@ const COL_CMD = 14;  // Command column width
 const COL_DESC = 36; // Description column width
 const MENU_WIDTH = COL_CMD + COL_DESC + 3; // Total menu width
 
-function drawCommandMenu(selectedIndex: number, filter: string = ''): string[] {
-  const lines: string[] = [];
-
-  // Filter commands based on input
-  const filtered = filter
-    ? commands.filter(c => c.name.startsWith(filter.toLowerCase()))
-    : commands;
-
-  if (filtered.length === 0) {
-    return [];
-  }
-
-  // Top separator
-  lines.push(chalk.gray('─'.repeat(MENU_WIDTH)));
-
-  // Command rows
-  filtered.forEach((cmd, i) => {
-    const isSelected = i === selectedIndex;
-    const cmdName = ('/' + cmd.name).padEnd(COL_CMD);
-    const desc = cmd.description.substring(0, COL_DESC).padEnd(COL_DESC);
-
-    if (isSelected) {
-      // Selected row - cyan text color only
-      lines.push(chalk.cyan(' ' + cmdName + desc + ' '));
-    } else {
-      lines.push(chalk.gray(' ') + chalk.white(cmdName) + chalk.gray(desc) + chalk.gray(' '));
-    }
-  });
-
-  // Bottom separator
-  lines.push(chalk.gray('─'.repeat(MENU_WIDTH)));
-  lines.push(chalk.dim(' ↑↓ navigate • enter select • esc cancel'));
-
-  return lines;
-}
-
-function clearMenuLines(lineCount: number) {
-  // Move cursor up and clear each line
-  for (let i = 0; i < lineCount; i++) {
-    process.stdout.write('\x1B[1A'); // Move up
-    process.stdout.write('\x1B[2K'); // Clear line
-  }
-}
-
 // ============= INTERACTIVE MENU PROMPT =============
 async function interactivePrompt(): Promise<string> {
   return new Promise((resolve) => {
@@ -528,73 +484,80 @@ async function interactivePrompt(): Promise<string> {
     let input = '';
     let menuVisible = false;
     let selectedIndex = 0;
-    let menuLines: string[] = [];
-    let cursorPos = 0;
+    let menuLineCount = 0;
 
-    // Get filtered commands
-    const getFilteredCommands = () => {
+    // Get filtered commands based on current input
+    const getFiltered = (): Command[] => {
       const filter = input.startsWith('/') ? input.slice(1) : '';
       return filter
         ? commands.filter(c => c.name.startsWith(filter.toLowerCase()))
         : commands;
     };
 
-    const redrawPrompt = () => {
-      // Clear current line and redraw prompt with input
+    // Clear N lines below current position
+    const clearBelow = (count: number) => {
+      for (let i = 0; i < count; i++) {
+        stdout.write('\n\x1B[2K'); // Move down and clear line
+      }
+      // Move back up
+      if (count > 0) {
+        stdout.write(`\x1B[${count}A`);
+      }
+    };
+
+    // Render the full display (prompt + menu)
+    const render = () => {
+      const filtered = getFiltered();
+
+      // Clear current line and write prompt
       stdout.write('\r\x1B[2K');
       stdout.write(promptStr + input);
-    };
 
-    const showMenu = () => {
-      const filter = input.startsWith('/') ? input.slice(1) : '';
-      const filtered = getFilteredCommands();
-
-      if (filtered.length === 0) {
-        hideMenu();
-        return;
-      }
-
-      // Adjust selected index if out of bounds
-      if (selectedIndex >= filtered.length) {
-        selectedIndex = filtered.length - 1;
-      }
-
-      menuLines = drawCommandMenu(selectedIndex, filter);
-
-      // Print menu below prompt
-      stdout.write('\n');
-      menuLines.forEach(line => stdout.write(line + '\n'));
-
-      // Move cursor back to prompt
-      stdout.write(`\x1B[${menuLines.length + 1}A`);
-      stdout.write('\r' + promptStr + input);
-
-      menuVisible = true;
-    };
-
-    const hideMenu = () => {
-      if (menuVisible && menuLines.length > 0) {
-        // Save cursor position
-        stdout.write('\x1B[s');
-        // Move down and clear menu lines
-        stdout.write('\n');
-        for (let i = 0; i < menuLines.length; i++) {
-          stdout.write('\x1B[2K\n');
+      if (menuVisible && filtered.length > 0) {
+        // Clamp selected index
+        if (selectedIndex >= filtered.length) {
+          selectedIndex = filtered.length - 1;
         }
-        // Restore cursor position
-        stdout.write('\x1B[u');
-        // Move back up
-        stdout.write(`\x1B[${menuLines.length}A`);
-        redrawPrompt();
-      }
-      menuVisible = false;
-      menuLines = [];
-    };
+        if (selectedIndex < 0) {
+          selectedIndex = 0;
+        }
 
-    const updateMenu = () => {
-      if (menuVisible) {
-        hideMenu();
-        showMenu();
+        // Build menu lines
+        const lines: string[] = [];
+        lines.push(chalk.gray('─'.repeat(MENU_WIDTH)));
+
+        filtered.forEach((cmd, i) => {
+          const cmdName = ('/' + cmd.name).padEnd(COL_CMD);
+          const desc = cmd.description.substring(0, COL_DESC).padEnd(COL_DESC);
+
+          if (i === selectedIndex) {
+            lines.push(chalk.cyan(' ' + cmdName + desc + ' '));
+          } else {
+            lines.push(chalk.gray(' ') + chalk.white(cmdName) + chalk.gray(desc) + chalk.gray(' '));
+          }
+        });
+
+        lines.push(chalk.gray('─'.repeat(MENU_WIDTH)));
+        lines.push(chalk.dim(' ↑↓ navigate • enter select • esc cancel'));
+
+        // Clear old menu if it was longer
+        if (menuLineCount > lines.length) {
+          clearBelow(menuLineCount);
+        }
+
+        // Draw new menu
+        stdout.write('\n');
+        lines.forEach(line => stdout.write(line + '\n'));
+
+        // Move cursor back to prompt line
+        stdout.write(`\x1B[${lines.length + 1}A`);
+        stdout.write('\r' + promptStr + input);
+
+        menuLineCount = lines.length;
+      } else if (menuLineCount > 0) {
+        // Clear old menu
+        clearBelow(menuLineCount);
+        menuLineCount = 0;
       }
     };
 
@@ -602,7 +565,6 @@ async function interactivePrompt(): Promise<string> {
     stdout.write(promptStr);
 
     if (!stdin.isTTY) {
-      // Non-interactive mode - use readline
       const tempRl = readline.createInterface({ input: stdin, output: stdout });
       tempRl.on('line', (line) => {
         tempRl.close();
@@ -614,137 +576,99 @@ async function interactivePrompt(): Promise<string> {
     stdin.setRawMode(true);
     stdin.resume();
 
-    let escapeBuffer = '';
-    let escapeTimeout: NodeJS.Timeout | null = null;
-
-    const processEscapeSequence = (seq: string) => {
-      if (seq === '\x1B[A') { // Up arrow
-        if (menuVisible) {
-          selectedIndex = Math.max(0, selectedIndex - 1);
-          updateMenu();
-        }
-      } else if (seq === '\x1B[B') { // Down arrow
-        if (menuVisible) {
-          const filtered = getFilteredCommands();
-          selectedIndex = Math.min(filtered.length - 1, selectedIndex + 1);
-          updateMenu();
-        }
-      } else if (seq === '\x1B' || seq === '\x1B[' || seq === '\x1B[C' || seq === '\x1B[D') {
-        // ESC alone or left/right arrows - just close menu if ESC
-        if (seq === '\x1B' && menuVisible) {
-          hideMenu();
-        }
-      }
-      escapeBuffer = '';
-    };
-
     const onKeypress = (key: Buffer) => {
       const char = key.toString();
 
-      // Handle complete escape sequences that arrive at once
-      if (char === '\x1B[A') { // Up arrow (complete)
+      // Arrow keys (may come as complete sequence or need checking)
+      if (char === '\x1B[A' || char === '\x1B\x5bA') { // Up
         if (menuVisible) {
           selectedIndex = Math.max(0, selectedIndex - 1);
-          updateMenu();
+          render();
         }
         return;
       }
 
-      if (char === '\x1B[B') { // Down arrow (complete)
+      if (char === '\x1B[B' || char === '\x1B\x5bB') { // Down
         if (menuVisible) {
-          const filtered = getFilteredCommands();
+          const filtered = getFiltered();
           selectedIndex = Math.min(filtered.length - 1, selectedIndex + 1);
-          updateMenu();
+          render();
         }
         return;
       }
 
-      if (char === '\x1B[C' || char === '\x1B[D') { // Left/right arrows - ignore
+      // Ignore other escape sequences (left, right, etc)
+      if (char.startsWith('\x1B[') || char.startsWith('\x1B\x5b')) {
         return;
       }
 
-      // Handle escape sequences that arrive byte by byte
-      if (char === '\x1B' || escapeBuffer.length > 0) {
-        escapeBuffer += char;
-
-        // Clear any existing timeout
-        if (escapeTimeout) {
-          clearTimeout(escapeTimeout);
+      // ESC key alone
+      if (char === '\x1B') {
+        if (menuVisible) {
+          menuVisible = false;
+          render();
         }
-
-        // Check if we have a complete sequence
-        if (escapeBuffer.length >= 3 && escapeBuffer.startsWith('\x1B[')) {
-          processEscapeSequence(escapeBuffer);
-          return;
-        }
-
-        // Set timeout for standalone ESC
-        escapeTimeout = setTimeout(() => {
-          processEscapeSequence(escapeBuffer);
-        }, 50);
         return;
       }
 
-      // Handle special keys
-      if (char === '\x03') { // Ctrl+C
-        hideMenu();
+      // Ctrl+C
+      if (char === '\x03') {
+        if (menuLineCount > 0) {
+          clearBelow(menuLineCount);
+        }
+        stdout.write('\n');
         stdin.setRawMode(false);
         stdin.removeListener('data', onKeypress);
         process.exit(0);
       }
 
-      if (char === '\r' || char === '\n') { // Enter
-        const wasMenuVisible = menuVisible;
-        hideMenu();
+      // Enter
+      if (char === '\r' || char === '\n') {
+        const filtered = getFiltered();
+        let result = input;
+
+        // If menu visible and we have selection, use it
+        if (menuVisible && filtered.length > 0 && selectedIndex < filtered.length) {
+          result = '/' + filtered[selectedIndex].name;
+        }
+
+        // Clear menu
+        if (menuLineCount > 0) {
+          clearBelow(menuLineCount);
+        }
+
         stdout.write('\n');
         stdin.setRawMode(false);
         stdin.removeListener('data', onKeypress);
-
-        // If menu was visible, use selected command
-        if (wasMenuVisible && input.startsWith('/')) {
-          const filtered = getFilteredCommands();
-          if (filtered.length > 0 && selectedIndex < filtered.length) {
-            resolve('/' + filtered[selectedIndex].name);
-            return;
-          }
-        }
-        resolve(input);
+        resolve(result);
         return;
       }
 
-      if (char === '\x7F' || char === '\b') { // Backspace
+      // Backspace
+      if (char === '\x7F' || char === '\b') {
         if (input.length > 0) {
           input = input.slice(0, -1);
-          redrawPrompt();
 
           if (input === '' || !input.startsWith('/')) {
-            hideMenu();
-          } else {
-            selectedIndex = 0;
-            updateMenu();
+            menuVisible = false;
           }
+          selectedIndex = 0;
+          render();
         }
         return;
       }
 
-      // Regular character input (printable ASCII)
+      // Regular printable character
       if (char.length === 1 && char >= ' ' && char <= '~') {
         input += char;
-        redrawPrompt();
 
-        if (input === '/') {
+        if (input.startsWith('/')) {
+          menuVisible = true;
           selectedIndex = 0;
-          showMenu();
-        } else if (input.startsWith('/')) {
-          selectedIndex = 0;
-          if (menuVisible) {
-            updateMenu();
-          } else {
-            showMenu();
-          }
-        } else if (menuVisible) {
-          hideMenu();
+        } else {
+          menuVisible = false;
         }
+        render();
       }
     };
 
