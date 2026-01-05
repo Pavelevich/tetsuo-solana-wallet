@@ -28,8 +28,8 @@ import {
   ASSOCIATED_TOKEN_PROGRAM_ID
 } from '@solana/spl-token';
 
-// TETSUO Token Mint Address on Solana (placeholder - replace with actual)
-export const TETSUO_MINT = new PublicKey('TETSUoXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX');
+// TETSUO Token Mint Address on Solana Mainnet
+export const TETSUO_MINT = new PublicKey('8i51XNNpGaKaj4G4nDdmQh95v4FKAxw8mhtaRoKd9tE8');
 export const TETSUO_DECIMALS = 9;
 
 export interface TokenBalance {
