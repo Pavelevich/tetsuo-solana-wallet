@@ -351,13 +351,11 @@ registerCommand({
   description: 'Live TETSUO market stats for traders',
   usage: '/market <seconds>  (e.g. /market 5)',
   handler: async (args) => {
-    // Parse interval - REQUIRED
     const intervalSec = Math.max(1, Math.min(60, parseInt(args[0]) || 5));
     const DEXSCREENER_API = 'https://api.dexscreener.com/latest/dex/tokens/8i51XNNpGaKaj4G4nDdmQh95v4FKAxw8mhtaRoKd9tE8';
 
     let running = true;
     let refreshCount = 0;
-    let frameDrawn = false;
 
     // Set up keypress listener
     const stdin = process.stdin;
@@ -374,164 +372,86 @@ registerCommand({
     };
     stdin.on('data', onKey);
 
-    // Constants
-    const W = 64; // Total width including borders
-    const INNER = W - 4; // Inner content width (60)
-    const ln = (char: string, n: number) => char.repeat(n);
-    const g = chalk.green;
-
-    // Strip ANSI codes for length calculation
-    const stripAnsi = (s: string) => s.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '');
-
-    // Pad string to exact width (handles ANSI)
-    const padCenter = (s: string, w: number) => {
-      const vis = stripAnsi(s).length;
-      const total = Math.max(0, w - vis);
-      const left = Math.floor(total / 2);
-      const right = total - left;
-      return ' '.repeat(left) + s + ' '.repeat(right);
-    };
-
-    const padRight = (s: string, w: number) => {
-      const vis = stripAnsi(s).length;
-      return s + ' '.repeat(Math.max(0, w - vis));
-    };
-
-    // Formatting helpers
-    const fmtPrice = (p: number) => '$' + (p < 0.01 ? p.toFixed(6) : p.toFixed(4));
+    // Formatting
+    const fmtPrice = (p: number) => p < 0.01 ? p.toFixed(6) : p.toFixed(4);
     const fmtUsd = (n: number) => n >= 1000000 ? `$${(n/1000000).toFixed(2)}M` : n >= 1000 ? `$${(n/1000).toFixed(1)}K` : `$${n.toFixed(2)}`;
-    const fmtChange = (c: number) => {
-      const s = c >= 0 ? `+${c.toFixed(2)}%` : `${c.toFixed(2)}%`;
-      return c >= 0 ? chalk.green(s.padStart(7)) : chalk.red(s.padStart(7));
-    };
-    const fmtVol = (v: number) => '$' + (v >= 1000000 ? `${(v/1000000).toFixed(1)}M` : v >= 1000 ? `${(v/1000).toFixed(0)}K` : v.toFixed(0));
+    const fmtChange = (c: number) => c >= 0 ? chalk.green(`+${c.toFixed(2)}%`) : chalk.red(`${c.toFixed(2)}%`);
+    const fmtVol = (v: number) => v >= 1000000 ? `$${(v/1000000).toFixed(1)}M` : v >= 1000 ? `$${(v/1000).toFixed(0)}K` : `$${v.toFixed(0)}`;
 
-    // Build a row with exact width
-    const row = (content: string) => g('║') + ' ' + padRight(content, INNER) + ' ' + g('║');
-    const rowC = (content: string) => g('║') + ' ' + padCenter(content, INNER) + ' ' + g('║');
-    const rowEmpty = () => g('║') + ' '.repeat(W - 2) + g('║');
-
-    // Draw static frame ONCE
-    const drawFrame = () => {
-      console.clear();
-      const title = `◈  T E T S U O   T R A D I N G  ◈  [${intervalSec}s]`;
-      console.log();
-      console.log('  ' + chalk.gray(ln('░', W)));
-      console.log('  ' + chalk.green(ln('▓', W)));
-      console.log('  ' + g('╔' + ln('═', W-2) + '╗'));
-      console.log('  ' + rowC(chalk.bold.white(title)));
-      console.log('  ' + g('╠' + ln('═', W-2) + '╣'));
-      console.log('  ' + rowEmpty());  // row 7 - price
-      console.log('  ' + rowEmpty());  // row 8 - sol price
-      console.log('  ' + rowEmpty());  // row 9 - changes
-      console.log('  ' + g('╠' + ln('═', W-2) + '╣'));
-      console.log('  ' + rowC(chalk.bold.cyan('─── VOLUME ───')));
-      console.log('  ' + rowEmpty());  // row 12 - volume
-      console.log('  ' + g('╠' + ln('═', W-2) + '╣'));
-      console.log('  ' + rowC(chalk.bold.cyan('─── MARKET ───')));
-      console.log('  ' + rowEmpty());  // row 15 - mcap
-      console.log('  ' + rowEmpty());  // row 16 - fdv
-      console.log('  ' + rowEmpty());  // row 17 - liq
-      console.log('  ' + g('╠' + ln('═', W-2) + '╣'));
-      console.log('  ' + rowC(chalk.bold.cyan('─── TRANSACTIONS ───')));
-      console.log('  ' + rowEmpty());  // row 20 - tx 24h
-      console.log('  ' + rowEmpty());  // row 21 - tx 1h
-      console.log('  ' + g('╚' + ln('═', W-2) + '╝'));
-      console.log('  ' + chalk.green(ln('▓', W)));
-      console.log('  ' + chalk.gray(ln('░', W)));
-      console.log();
-      console.log('  ' + chalk.gray('Status: ' + ln('─', 50)));  // row 26
-      console.log('  ' + chalk.dim('Press q to exit │ Source: DexScreener'));
-      frameDrawn = true;
-    };
-
-    // Update only the data values using cursor positioning
-    const updateData = (data: any) => {
-      const pair = data.pairs?.[0];
-      if (!pair) return;
-
-      const price = parseFloat(pair.priceUsd) || 0;
-      const priceNative = parseFloat(pair.priceNative) || 0;
-      const change1h = pair.priceChange?.h1 || 0;
-      const change6h = pair.priceChange?.h6 || 0;
-      const change24h = pair.priceChange?.h24 || 0;
-      const vol24h = pair.volume?.h24 || 0;
-      const vol6h = pair.volume?.h6 || 0;
-      const vol1h = pair.volume?.h1 || 0;
-      const liq = pair.liquidity?.usd || 0;
-      const mcap = pair.marketCap || 0;
-      const fdv = pair.fdv || 0;
-      const buys24h = pair.txns?.h24?.buys || 0;
-      const sells24h = pair.txns?.h24?.sells || 0;
-      const buys1h = pair.txns?.h1?.buys || 0;
-      const sells1h = pair.txns?.h1?.sells || 0;
-
-      const moveTo = (r: number) => `\x1B[${r};3H`;
-
-      // Row 7: Price USD
-      process.stdout.write(moveTo(7) + '  ' + rowC(chalk.bold.white(fmtPrice(price))));
-
-      // Row 8: Price SOL
-      process.stdout.write(moveTo(8) + '  ' + rowC(chalk.gray(priceNative.toFixed(8) + ' SOL')));
-
-      // Row 9: Changes
-      const chg = `1H:${fmtChange(change1h)}  │  6H:${fmtChange(change6h)}  │  24H:${fmtChange(change24h)}`;
-      process.stdout.write(moveTo(9) + '  ' + rowC(chg));
-
-      // Row 12: Volume
-      const vol = `24H: ${chalk.yellow(fmtVol(vol24h).padStart(7))}  │  6H: ${chalk.yellow(fmtVol(vol6h).padStart(6))}  │  1H: ${chalk.yellow(fmtVol(vol1h).padStart(5))}`;
-      process.stdout.write(moveTo(12) + '  ' + rowC(vol));
-
-      // Row 15-17: Market metrics
-      process.stdout.write(moveTo(15) + '  ' + row(chalk.gray('Market Cap: ') + chalk.white(fmtUsd(mcap))));
-      process.stdout.write(moveTo(16) + '  ' + row(chalk.gray('FDV:        ') + chalk.white(fmtUsd(fdv))));
-      process.stdout.write(moveTo(17) + '  ' + row(chalk.gray('Liquidity:  ') + chalk.white(fmtUsd(liq))));
-
-      // Row 20-21: Transactions
-      const buyRatio24 = buys24h + sells24h > 0 ? (buys24h / (buys24h + sells24h) * 100).toFixed(0) : '0';
-      const tx24 = `24H: ${chalk.green(String(buys24h).padStart(3) + ' buys')} / ${chalk.red(String(sells24h).padStart(3) + ' sells')}  ${chalk.cyan('(' + buyRatio24 + '% buy)')}`;
-      process.stdout.write(moveTo(20) + '  ' + rowC(tx24));
-
-      const buyRatio1 = buys1h + sells1h > 0 ? (buys1h / (buys1h + sells1h) * 100).toFixed(0) : '0';
-      const tx1 = ` 1H: ${chalk.green(String(buys1h).padStart(3) + ' buys')} / ${chalk.red(String(sells1h).padStart(3) + ' sells')}  ${chalk.cyan('(' + buyRatio1 + '% buy)')}`;
-      process.stdout.write(moveTo(21) + '  ' + rowC(tx1));
-
-      // Row 26: Status
-      refreshCount++;
-      const now = new Date().toLocaleTimeString();
-      process.stdout.write(moveTo(26) + '  ' + chalk.green('✓ ') + chalk.white(now) + chalk.gray(` (#${refreshCount})`));
-
-      // Move cursor to bottom
-      process.stdout.write('\x1B[28;1H');
-    };
-
-    // Main loop
+    // Main loop - redraw everything each time (simple and reliable)
     while (running) {
       try {
-        if (!frameDrawn) {
-          drawFrame();
-        }
-
-        // Show loading indicator
-        process.stdout.write('\x1B[26;3H' + chalk.cyan('⟳ ') + chalk.gray('Fetching...') + '          ');
-
         // Fetch data
         const response = await fetch(DEXSCREENER_API);
-        const data = await response.json();
+        const data = await response.json() as any;
+        const pair = data.pairs?.[0];
 
         if (!running) break;
 
-        // Update values in place
-        updateData(data);
+        // Parse data
+        const price = parseFloat(pair?.priceUsd) || 0;
+        const priceNative = parseFloat(pair?.priceNative) || 0;
+        const change1h = pair?.priceChange?.h1 || 0;
+        const change6h = pair?.priceChange?.h6 || 0;
+        const change24h = pair?.priceChange?.h24 || 0;
+        const vol24h = pair?.volume?.h24 || 0;
+        const vol6h = pair?.volume?.h6 || 0;
+        const vol1h = pair?.volume?.h1 || 0;
+        const liq = pair?.liquidity?.usd || 0;
+        const mcap = pair?.marketCap || 0;
+        const fdv = pair?.fdv || 0;
+        const buys24h = pair?.txns?.h24?.buys || 0;
+        const sells24h = pair?.txns?.h24?.sells || 0;
+        const buys1h = pair?.txns?.h1?.buys || 0;
+        const sells1h = pair?.txns?.h1?.sells || 0;
+        const buyRatio24 = buys24h + sells24h > 0 ? ((buys24h / (buys24h + sells24h)) * 100).toFixed(0) : '0';
+        const buyRatio1 = buys1h + sells1h > 0 ? ((buys1h / (buys1h + sells1h)) * 100).toFixed(0) : '0';
+
+        refreshCount++;
+        const now = new Date().toLocaleTimeString();
+
+        // Clear and draw
+        console.clear();
+        console.log();
+        console.log(chalk.green('  ┌─────────────────────────────────────────────────────────┐'));
+        console.log(chalk.green('  │') + chalk.bold.white('            ◈  T E T S U O   T R A D I N G  ◈             ') + chalk.green('│'));
+        console.log(chalk.green('  └─────────────────────────────────────────────────────────┘'));
+        console.log();
+
+        // Price
+        console.log(chalk.gray('  PRICE'));
+        console.log(chalk.bold.white(`  $${fmtPrice(price)}`) + chalk.gray(`  (${priceNative.toFixed(8)} SOL)`));
+        console.log(`  ${fmtChange(change1h)} ${chalk.dim('1H')}   ${fmtChange(change6h)} ${chalk.dim('6H')}   ${fmtChange(change24h)} ${chalk.dim('24H')}`);
+        console.log();
+
+        // Volume
+        console.log(chalk.gray('  VOLUME'));
+        console.log(`  ${chalk.yellow(fmtVol(vol24h))} ${chalk.dim('24H')}   ${chalk.yellow(fmtVol(vol6h))} ${chalk.dim('6H')}   ${chalk.yellow(fmtVol(vol1h))} ${chalk.dim('1H')}`);
+        console.log();
+
+        // Market
+        console.log(chalk.gray('  MARKET'));
+        console.log(`  ${chalk.dim('MCap:')} ${chalk.white(fmtUsd(mcap))}   ${chalk.dim('FDV:')} ${chalk.white(fmtUsd(fdv))}   ${chalk.dim('Liq:')} ${chalk.white(fmtUsd(liq))}`);
+        console.log();
+
+        // Transactions
+        console.log(chalk.gray('  TRANSACTIONS'));
+        console.log(`  ${chalk.dim('24H:')} ${chalk.green(buys24h + ' buys')} / ${chalk.red(sells24h + ' sells')} ${chalk.cyan(`(${buyRatio24}% buy)`)}`);
+        console.log(`  ${chalk.dim(' 1H:')} ${chalk.green(buys1h + ' buys')} / ${chalk.red(sells1h + ' sells')} ${chalk.cyan(`(${buyRatio1}% buy)`)}`);
+        console.log();
+
+        // Footer
+        console.log(chalk.gray('  ─────────────────────────────────────────────────────────'));
+        console.log(`  ${chalk.green('✓')} ${chalk.white(now)} ${chalk.gray(`#${refreshCount}`)}  ${chalk.dim(`│ Refresh: ${intervalSec}s │ Press q to exit`)}`);
 
         // Wait for interval
         for (let i = intervalSec; i > 0 && running; i--) {
-          process.stdout.write(`\x1B[28;3H${chalk.yellow('○')} Next in ${chalk.white(i)}s...   `);
+          process.stdout.write(`\r  ${chalk.yellow('○')} Next update in ${chalk.white(i)}s...   `);
           await new Promise(r => setTimeout(r, 1000));
         }
 
       } catch (error) {
-        process.stdout.write('\x1B[26;3H' + chalk.red('✗ Error fetching. Retry...') + '     ');
+        console.log(chalk.red('\n  ✗ Error fetching data. Retrying...\n'));
         await new Promise(r => setTimeout(r, 2000));
       }
     }
