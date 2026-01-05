@@ -344,6 +344,199 @@ registerCommand({
   }
 });
 
+// ============= COMMAND: MARKET (LIVE TRADING STATS) =============
+registerCommand({
+  name: 'market',
+  aliases: ['stats', 'price', 'trading'],
+  description: 'Live TETSUO market stats for traders',
+  usage: '/market [interval_seconds]',
+  handler: async (args) => {
+    const intervalSec = Math.max(2, Math.min(60, parseInt(args[0]) || 2));
+    const DEXSCREENER_API = 'https://api.dexscreener.com/latest/dex/tokens/8i51XNNpGaKaj4G4nDdmQh95v4FKAxw8mhtaRoKd9tE8';
+
+    let running = true;
+    let refreshCount = 0;
+
+    // Spinner frames
+    const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+    let spinnerIdx = 0;
+    let spinnerInterval: NodeJS.Timeout | null = null;
+
+    // Set up keypress listener
+    const stdin = process.stdin;
+    if (stdin.isTTY) {
+      stdin.setRawMode(true);
+      stdin.resume();
+    }
+
+    const onKey = (key: Buffer) => {
+      const char = key.toString();
+      if (char === 'q' || char === 'Q' || char === '\x1B' || char === '\x03') {
+        running = false;
+        if (spinnerInterval) clearInterval(spinnerInterval);
+      }
+    };
+    stdin.on('data', onKey);
+
+    // Formatting helpers
+    const formatPrice = (p: number) => p < 0.01 ? p.toFixed(6) : p.toFixed(4);
+    const formatUsd = (n: number) => n >= 1000000 ? `$${(n/1000000).toFixed(2)}M` : n >= 1000 ? `$${(n/1000).toFixed(1)}K` : `$${n.toFixed(2)}`;
+    const formatChange = (c: number) => c >= 0 ? chalk.green(`+${c.toFixed(2)}%`) : chalk.red(`${c.toFixed(2)}%`);
+    const formatVol = (v: number) => v >= 1000000 ? `${(v/1000000).toFixed(2)}M` : v >= 1000 ? `${(v/1000).toFixed(1)}K` : v.toFixed(2);
+
+    const W = 62;
+    const line = (c: string, n: number) => c.repeat(n);
+    const padR = (s: string, n: number) => {
+      const stripped = s.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '');
+      return s + ' '.repeat(Math.max(0, n - stripped.length));
+    };
+    const padC = (s: string, n: number) => {
+      const stripped = s.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '');
+      const total = Math.max(0, n - stripped.length);
+      return ' '.repeat(Math.floor(total/2)) + s + ' '.repeat(Math.ceil(total/2));
+    };
+
+    while (running) {
+      try {
+        // Show spinner
+        console.clear();
+        console.log(chalk.green('\n  ◈ TETSUO TRADING TERMINAL ◈'));
+        console.log(chalk.gray('  ' + line('═', W)));
+        process.stdout.write(chalk.cyan(`  ${spinnerFrames[0]} Fetching market data...`));
+
+        spinnerInterval = setInterval(() => {
+          spinnerIdx = (spinnerIdx + 1) % spinnerFrames.length;
+          process.stdout.write(`\r  ${chalk.cyan(spinnerFrames[spinnerIdx])} ${chalk.gray('Fetching market data...')}`);
+        }, 80);
+
+        // Fetch data
+        const response = await fetch(DEXSCREENER_API);
+        const data = await response.json() as any;
+        const pair = data.pairs?.[0]; // Main Raydium pool
+
+        if (spinnerInterval) {
+          clearInterval(spinnerInterval);
+          spinnerInterval = null;
+        }
+
+        if (!pair) {
+          console.log(chalk.red('\n  ✗ No market data available\n'));
+          await new Promise(r => setTimeout(r, 2000));
+          continue;
+        }
+
+        // Parse data
+        const price = parseFloat(pair.priceUsd) || 0;
+        const priceNative = parseFloat(pair.priceNative) || 0;
+        const change1h = pair.priceChange?.h1 || 0;
+        const change6h = pair.priceChange?.h6 || 0;
+        const change24h = pair.priceChange?.h24 || 0;
+        const vol24h = pair.volume?.h24 || 0;
+        const vol6h = pair.volume?.h6 || 0;
+        const vol1h = pair.volume?.h1 || 0;
+        const liq = pair.liquidity?.usd || 0;
+        const mcap = pair.marketCap || 0;
+        const fdv = pair.fdv || 0;
+        const buys24h = pair.txns?.h24?.buys || 0;
+        const sells24h = pair.txns?.h24?.sells || 0;
+        const buys1h = pair.txns?.h1?.buys || 0;
+        const sells1h = pair.txns?.h1?.sells || 0;
+
+        // Clear and draw
+        console.clear();
+        const c = chalk.green;
+
+        // Header
+        console.log();
+        console.log('  ' + chalk.gray(line('░', W)));
+        console.log('  ' + chalk.green(line('▓', W)));
+        console.log('  ' + c('╔' + line('═', W-2) + '╗'));
+        console.log('  ' + c('║') + padC(chalk.bold.white('◈  T E T S U O   T R A D I N G  ◈'), W-2) + c('║'));
+        console.log('  ' + c('╠' + line('═', W-2) + '╣'));
+
+        // Price section
+        console.log('  ' + c('║') + ' '.repeat(W-2) + c('║'));
+        const priceStr = chalk.bold.white('$' + formatPrice(price));
+        const priceInSol = chalk.gray(`${priceNative.toFixed(8)} SOL`);
+        console.log('  ' + c('║') + padC(priceStr + '  ' + priceInSol, W-2) + c('║'));
+        console.log('  ' + c('║') + ' '.repeat(W-2) + c('║'));
+
+        // Price changes bar
+        const changes = `1H: ${formatChange(change1h)}  │  6H: ${formatChange(change6h)}  │  24H: ${formatChange(change24h)}`;
+        console.log('  ' + c('║') + padC(changes, W-2) + c('║'));
+        console.log('  ' + c('║') + ' '.repeat(W-2) + c('║'));
+        console.log('  ' + c('╠' + line('═', W-2) + '╣'));
+
+        // Volume section
+        console.log('  ' + c('║') + padC(chalk.bold.cyan('─── VOLUME ───'), W-2) + c('║'));
+        console.log('  ' + c('║') + ' '.repeat(W-2) + c('║'));
+        const volRow = `24H: ${chalk.yellow('$' + formatVol(vol24h))}  │  6H: ${chalk.yellow('$' + formatVol(vol6h))}  │  1H: ${chalk.yellow('$' + formatVol(vol1h))}`;
+        console.log('  ' + c('║') + padC(volRow, W-2) + c('║'));
+        console.log('  ' + c('║') + ' '.repeat(W-2) + c('║'));
+        console.log('  ' + c('╠' + line('═', W-2) + '╣'));
+
+        // Market metrics
+        console.log('  ' + c('║') + padC(chalk.bold.cyan('─── MARKET ───'), W-2) + c('║'));
+        console.log('  ' + c('║') + ' '.repeat(W-2) + c('║'));
+        console.log('  ' + c('║') + '  ' + padR(chalk.gray('Market Cap:') + '     ' + chalk.white(formatUsd(mcap)), W-4) + c('║'));
+        console.log('  ' + c('║') + '  ' + padR(chalk.gray('FDV:') + '            ' + chalk.white(formatUsd(fdv)), W-4) + c('║'));
+        console.log('  ' + c('║') + '  ' + padR(chalk.gray('Liquidity:') + '      ' + chalk.white(formatUsd(liq)), W-4) + c('║'));
+        console.log('  ' + c('║') + ' '.repeat(W-2) + c('║'));
+        console.log('  ' + c('╠' + line('═', W-2) + '╣'));
+
+        // Transactions
+        console.log('  ' + c('║') + padC(chalk.bold.cyan('─── TRANSACTIONS ───'), W-2) + c('║'));
+        console.log('  ' + c('║') + ' '.repeat(W-2) + c('║'));
+        const buyRatio24 = buys24h + sells24h > 0 ? (buys24h / (buys24h + sells24h) * 100).toFixed(0) : '0';
+        const txRow24 = `24H: ${chalk.green(buys24h + ' buys')} / ${chalk.red(sells24h + ' sells')}  (${chalk.cyan(buyRatio24 + '% buy')})`;
+        console.log('  ' + c('║') + padC(txRow24, W-2) + c('║'));
+        const buyRatio1 = buys1h + sells1h > 0 ? (buys1h / (buys1h + sells1h) * 100).toFixed(0) : '0';
+        const txRow1 = `1H:  ${chalk.green(buys1h + ' buys')} / ${chalk.red(sells1h + ' sells')}  (${chalk.cyan(buyRatio1 + '% buy')})`;
+        console.log('  ' + c('║') + padC(txRow1, W-2) + c('║'));
+        console.log('  ' + c('║') + ' '.repeat(W-2) + c('║'));
+
+        // Footer
+        console.log('  ' + c('╚' + line('═', W-2) + '╝'));
+        console.log('  ' + chalk.green(line('▓', W)));
+        console.log('  ' + chalk.gray(line('░', W)));
+
+        // Status
+        refreshCount++;
+        const now = new Date().toLocaleTimeString();
+        console.log();
+        console.log(chalk.green(`  ✓ Updated: ${now}`) + chalk.gray(` (refresh #${refreshCount})`));
+        console.log(chalk.gray('  Source: DexScreener (Raydium)'));
+        console.log(chalk.dim('  Press q to exit'));
+
+        // Countdown
+        for (let i = intervalSec; i > 0 && running; i--) {
+          process.stdout.write(`\r  ${chalk.yellow('○')} Next refresh in ${chalk.white(i)}s...  `);
+          await new Promise(r => setTimeout(r, 1000));
+        }
+
+      } catch (error) {
+        if (spinnerInterval) {
+          clearInterval(spinnerInterval);
+          spinnerInterval = null;
+        }
+        console.log(chalk.red('\n  ✗ Failed to fetch market data. Retrying...\n'));
+        await new Promise(r => setTimeout(r, 2000));
+      }
+    }
+
+    // Cleanup
+    if (stdin.isTTY) {
+      stdin.setRawMode(false);
+    }
+    stdin.removeListener('data', onKey);
+
+    console.clear();
+    printLogo();
+    showStatus();
+    console.log(chalk.gray('  Trading terminal closed.\n'));
+  }
+});
+
 // ============= COMMAND: RECEIVE =============
 registerCommand({
   name: 'receive',
