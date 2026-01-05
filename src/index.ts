@@ -1,7 +1,7 @@
 /**
  * TETSUO Solana Wallet - Main Export
  *
- * This module exports all public APIs for programmatic use.
+ * 100% local and secure - no external AI APIs
  */
 
 // Core cryptography
@@ -48,15 +48,6 @@ export {
   type TokenBalance,
   type TransactionResult
 } from './solana/client.js';
-
-// Grok AI client
-export {
-  GrokClient,
-  MockGrokClient,
-  type GrokMessage,
-  type GrokResponse,
-  type ParsedCommand
-} from './grok/client.js';
 
 // UI components
 export * from './ui/ascii.js';

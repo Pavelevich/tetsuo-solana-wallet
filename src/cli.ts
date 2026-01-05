@@ -1,15 +1,12 @@
 #!/usr/bin/env node
 /**
- * TETSUO Solana Wallet - CLI Entry Point
+ * TETSUO Solana Wallet - CLI
  *
- * A secure, AI-powered command-line wallet for TETSUO on Solana.
+ * Interactive CLI with slash commands (Claude Code style)
+ * NO external AI APIs - 100% local and secure
  */
 
-import { Command } from 'commander';
-import inquirer from 'inquirer';
-import ora from 'ora';
-import chalk from 'chalk';
-
+import readline from 'readline';
 import {
   createWallet,
   importWalletFromMnemonic,
@@ -19,442 +16,534 @@ import {
   setActiveWallet,
   deleteWallet,
   loadConfig,
-  saveConfig,
-  UnlockedWallet
+  saveConfig
 } from './core/wallet.js';
 import { SolanaClient, createKeypairFromSecretKey } from './solana/client.js';
-import { GrokClient, MockGrokClient, ParsedCommand } from './grok/client.js';
 import {
   printLogo,
-  printWelcome,
-  printBalanceCard,
   printSuccess,
   printError,
   printWarning,
   printInfo,
-  printGrokResponse,
+  printBalanceCard,
   printQRCode,
   printWalletList,
   printTransactionHistory,
-  printTransactionConfirm,
-  printHelp,
-  clearScreen,
-  box,
-  shortenAddress
+  shortenAddress,
+  box
 } from './ui/ascii.js';
+import chalk from 'chalk';
 
-const program = new Command();
+// ============= SLASH COMMANDS =============
+interface Command {
+  name: string;
+  aliases: string[];
+  description: string;
+  usage: string;
+  handler: (args: string[]) => Promise<void>;
+}
 
-program
-  .name('tetsuo')
-  .description('TETSUO Solana Wallet with Grok AI Assistant')
-  .version('1.0.0');
+const commands: Command[] = [];
 
-// ============= NEW WALLET =============
-program
-  .command('new')
-  .description('Create a new wallet')
-  .option('-n, --name <name>', 'Wallet name')
-  .option('--network <network>', 'Network: mainnet, devnet, testnet', 'mainnet')
-  .action(async (options) => {
-    clearScreen();
-    printLogo();
+function registerCommand(cmd: Command) {
+  commands.push(cmd);
+}
 
-    const answers = await inquirer.prompt([
-      {
-        type: 'input',
-        name: 'name',
-        message: 'Wallet name:',
-        default: options.name || 'main',
-        validate: (input: string) => input.length > 0 || 'Name is required'
-      },
-      {
-        type: 'password',
-        name: 'password',
-        message: 'Encryption password:',
-        mask: '*',
-        validate: (input: string) => input.length >= 8 || 'Password must be at least 8 characters'
-      },
-      {
-        type: 'password',
-        name: 'confirmPassword',
-        message: 'Confirm password:',
-        mask: '*',
-        validate: (input: string, answers: any) =>
-          input === answers.password || 'Passwords do not match'
-      }
-    ]);
+function findCommand(input: string): Command | undefined {
+  const name = input.toLowerCase();
+  return commands.find(c =>
+    c.name === name || c.aliases.includes(name)
+  );
+}
 
-    const spinner = ora('Creating wallet...').start();
-
-    try {
-      const { wallet, mnemonic } = createWallet(
-        answers.name,
-        answers.password,
-        options.network as 'mainnet' | 'devnet' | 'testnet'
-      );
-
-      spinner.succeed('Wallet created!');
-
-      console.log(box(
-        chalk.yellow('⚠️  SAVE THIS MNEMONIC - IT CANNOT BE RECOVERED!\n\n') +
-        chalk.white(mnemonic) +
-        chalk.gray('\n\nWrite it down and store in a safe place.'),
-        'Recovery Phrase'
-      ));
-
-      printSuccess('Wallet created successfully!');
-      console.log(chalk.gray('  Name: ') + chalk.white(wallet.name));
-      console.log(chalk.gray('  Address: ') + chalk.cyan(wallet.address));
-      console.log(chalk.gray('  Network: ') + chalk.white(wallet.network));
-
-    } catch (error) {
-      spinner.fail('Failed to create wallet');
-      printError(error instanceof Error ? error.message : 'Unknown error');
-    }
-  });
-
-// ============= IMPORT WALLET =============
-program
-  .command('import')
-  .description('Import wallet from mnemonic')
-  .option('-n, --name <name>', 'Wallet name')
-  .option('--network <network>', 'Network: mainnet, devnet, testnet', 'mainnet')
-  .action(async (options) => {
-    clearScreen();
-    printLogo();
-
-    const answers = await inquirer.prompt([
-      {
-        type: 'input',
-        name: 'name',
-        message: 'Wallet name:',
-        default: options.name || 'imported',
-        validate: (input: string) => input.length > 0 || 'Name is required'
-      },
-      {
-        type: 'password',
-        name: 'mnemonic',
-        message: 'Enter mnemonic phrase:',
-        mask: '*',
-        validate: (input: string) => {
-          const words = input.trim().split(/\s+/);
-          return (words.length === 12 || words.length === 24) || 'Must be 12 or 24 words';
+// ============= COMMAND: HELP =============
+registerCommand({
+  name: 'help',
+  aliases: ['h', '?'],
+  description: 'Show available commands',
+  usage: '/help [command]',
+  handler: async (args) => {
+    if (args[0]) {
+      const cmd = findCommand(args[0]);
+      if (cmd) {
+        console.log(`\n${chalk.cyan('/' + cmd.name)} - ${cmd.description}`);
+        console.log(chalk.gray(`Usage: ${cmd.usage}`));
+        if (cmd.aliases.length > 0) {
+          console.log(chalk.gray(`Aliases: ${cmd.aliases.map(a => '/' + a).join(', ')}`));
         }
-      },
-      {
-        type: 'password',
-        name: 'password',
-        message: 'Encryption password:',
-        mask: '*',
-        validate: (input: string) => input.length >= 8 || 'Password must be at least 8 characters'
+        console.log();
+      } else {
+        printError(`Unknown command: ${args[0]}`);
       }
-    ]);
-
-    const spinner = ora('Importing wallet...').start();
-
-    try {
-      const wallet = importWalletFromMnemonic(
-        answers.name,
-        answers.mnemonic.trim(),
-        answers.password,
-        options.network as 'mainnet' | 'devnet' | 'testnet'
-      );
-
-      spinner.succeed('Wallet imported!');
-      printSuccess('Wallet imported successfully!');
-      console.log(chalk.gray('  Name: ') + chalk.white(wallet.name));
-      console.log(chalk.gray('  Address: ') + chalk.cyan(wallet.address));
-
-    } catch (error) {
-      spinner.fail('Failed to import wallet');
-      printError(error instanceof Error ? error.message : 'Unknown error');
-    }
-  });
-
-// ============= LIST WALLETS =============
-program
-  .command('list')
-  .description('List all wallets')
-  .action(() => {
-    const wallets = listWallets();
-    const config = loadConfig();
-    printWalletList(wallets, config.activeWallet || undefined);
-  });
-
-// ============= USE WALLET =============
-program
-  .command('use <name>')
-  .description('Switch active wallet')
-  .action((name: string) => {
-    try {
-      setActiveWallet(name);
-      printSuccess(`Active wallet set to "${name}"`);
-    } catch (error) {
-      printError(error instanceof Error ? error.message : 'Unknown error');
-    }
-  });
-
-// ============= BALANCE =============
-program
-  .command('balance')
-  .alias('bal')
-  .description('Show wallet balance')
-  .action(async () => {
-    const activeWallet = getActiveWallet();
-    if (!activeWallet) {
-      printError('No active wallet. Create one with: tetsuo new');
       return;
     }
 
+    console.log(chalk.cyan('\n  Commands:\n'));
+    commands.forEach(cmd => {
+      const aliases = cmd.aliases.length > 0
+        ? chalk.gray(` (${cmd.aliases.map(a => '/' + a).join(', ')})`)
+        : '';
+      console.log(`  ${chalk.white('/' + cmd.name.padEnd(12))} ${cmd.description}${aliases}`);
+    });
+    console.log(chalk.gray('\n  Type /help <command> for detailed usage\n'));
+  }
+});
+
+// ============= COMMAND: NEW =============
+registerCommand({
+  name: 'new',
+  aliases: ['create', 'generate'],
+  description: 'Create a new wallet',
+  usage: '/new <name>',
+  handler: async (args) => {
+    const name = args[0] || 'main';
+
+    const password = await askPassword('Encryption password (min 8 chars): ');
+    if (password.length < 8) {
+      printError('Password must be at least 8 characters');
+      return;
+    }
+
+    const confirm = await askPassword('Confirm password: ');
+    if (password !== confirm) {
+      printError('Passwords do not match');
+      return;
+    }
+
+    try {
+      console.log(chalk.gray('\nGenerating wallet...\n'));
+      const { wallet, mnemonic } = createWallet(name, password, 'mainnet');
+
+      console.log(box(
+        chalk.yellow('SAVE THIS RECOVERY PHRASE!\n\n') +
+        chalk.white(mnemonic) +
+        chalk.gray('\n\nWrite it down and store safely. Cannot be recovered!'),
+        'Recovery Phrase (24 words)'
+      ));
+
+      printSuccess(`Wallet "${name}" created`);
+      console.log(chalk.gray('  Address: ') + chalk.cyan(wallet.address));
+    } catch (error) {
+      printError(error instanceof Error ? error.message : 'Failed to create wallet');
+    }
+  }
+});
+
+// ============= COMMAND: IMPORT =============
+registerCommand({
+  name: 'import',
+  aliases: ['restore'],
+  description: 'Import wallet from recovery phrase',
+  usage: '/import <name>',
+  handler: async (args) => {
+    const name = args[0] || 'imported';
+
+    const mnemonic = await ask('Enter recovery phrase (12 or 24 words): ');
+    const words = mnemonic.trim().split(/\s+/);
+    if (words.length !== 12 && words.length !== 24) {
+      printError('Recovery phrase must be 12 or 24 words');
+      return;
+    }
+
+    const password = await askPassword('Encryption password: ');
+    if (password.length < 8) {
+      printError('Password must be at least 8 characters');
+      return;
+    }
+
+    try {
+      const wallet = importWalletFromMnemonic(name, mnemonic.trim(), password, 'mainnet');
+      printSuccess(`Wallet "${name}" imported`);
+      console.log(chalk.gray('  Address: ') + chalk.cyan(wallet.address));
+    } catch (error) {
+      printError(error instanceof Error ? error.message : 'Failed to import wallet');
+    }
+  }
+});
+
+// ============= COMMAND: LIST =============
+registerCommand({
+  name: 'list',
+  aliases: ['ls', 'wallets'],
+  description: 'List all wallets',
+  usage: '/list',
+  handler: async () => {
+    const wallets = listWallets();
+    const config = loadConfig();
+    printWalletList(wallets, config.activeWallet || undefined);
+  }
+});
+
+// ============= COMMAND: USE =============
+registerCommand({
+  name: 'use',
+  aliases: ['switch', 'select'],
+  description: 'Switch active wallet',
+  usage: '/use <name>',
+  handler: async (args) => {
+    if (!args[0]) {
+      printError('Please specify wallet name: /use <name>');
+      return;
+    }
+    try {
+      setActiveWallet(args[0]);
+      printSuccess(`Switched to wallet "${args[0]}"`);
+    } catch (error) {
+      printError(error instanceof Error ? error.message : 'Failed to switch wallet');
+    }
+  }
+});
+
+// ============= COMMAND: BALANCE =============
+registerCommand({
+  name: 'balance',
+  aliases: ['bal', 'b'],
+  description: 'Show wallet balance',
+  usage: '/balance',
+  handler: async () => {
+    const wallet = getActiveWallet();
+    if (!wallet) {
+      printWarning('No active wallet. Create one with /new');
+      return;
+    }
+
+    console.log(chalk.gray('\nFetching balance...\n'));
     const config = loadConfig();
     const client = new SolanaClient(config.rpcEndpoint, config.network);
 
-    const spinner = ora('Fetching balance...').start();
-
     try {
       const [solBalance, tetsuoBalance] = await Promise.all([
-        client.getSolBalance(activeWallet.address),
-        client.getTetsuoBalance(activeWallet.address)
+        client.getSolBalance(wallet.address),
+        client.getTetsuoBalance(wallet.address)
       ]);
-
-      spinner.stop();
 
       printBalanceCard(
         tetsuoBalance.uiBalance,
         solBalance.toFixed(4),
-        activeWallet.address
+        wallet.address
       );
-
     } catch (error) {
-      spinner.fail('Failed to fetch balance');
-      printError(error instanceof Error ? error.message : 'Unknown error');
+      printError('Failed to fetch balance. Check network connection.');
     }
-  });
+  }
+});
 
-// ============= RECEIVE =============
-program
-  .command('receive')
-  .alias('qr')
-  .description('Show address for receiving')
-  .action(() => {
-    const activeWallet = getActiveWallet();
-    if (!activeWallet) {
-      printError('No active wallet. Create one with: tetsuo new');
+// ============= COMMAND: RECEIVE =============
+registerCommand({
+  name: 'receive',
+  aliases: ['qr', 'address', 'addr'],
+  description: 'Show address for receiving tokens',
+  usage: '/receive',
+  handler: async () => {
+    const wallet = getActiveWallet();
+    if (!wallet) {
+      printWarning('No active wallet. Create one with /new');
+      return;
+    }
+    printQRCode(wallet.address);
+  }
+});
+
+// ============= COMMAND: SEND =============
+registerCommand({
+  name: 'send',
+  aliases: ['transfer', 's'],
+  description: 'Send TETSUO tokens',
+  usage: '/send <amount> <address>',
+  handler: async (args) => {
+    const wallet = getActiveWallet();
+    if (!wallet) {
+      printWarning('No active wallet. Create one with /new');
       return;
     }
 
-    printQRCode(activeWallet.address);
-    printInfo('Share this address to receive TETSUO tokens');
-  });
+    let amount: number;
+    let toAddress: string;
 
-// ============= SEND =============
-program
-  .command('send')
-  .description('Send TETSUO tokens')
-  .option('-a, --amount <amount>', 'Amount to send')
-  .option('-t, --to <address>', 'Recipient address')
-  .action(async (options) => {
-    const activeWallet = getActiveWallet();
-    if (!activeWallet) {
-      printError('No active wallet. Create one with: tetsuo new');
+    if (args.length >= 2) {
+      amount = parseFloat(args[0]);
+      toAddress = args[1];
+    } else {
+      const amountStr = await ask('Amount (TETSUO): ');
+      amount = parseFloat(amountStr);
+      toAddress = await ask('Recipient address: ');
+    }
+
+    if (isNaN(amount) || amount <= 0) {
+      printError('Invalid amount');
       return;
     }
 
-    const answers = await inquirer.prompt([
-      {
-        type: 'input',
-        name: 'to',
-        message: 'Recipient address:',
-        default: options.to,
-        validate: (input: string) => {
-          return SolanaClient.isValidAddress(input) || 'Invalid Solana address';
-        }
-      },
-      {
-        type: 'number',
-        name: 'amount',
-        message: 'Amount (TETSUO):',
-        default: options.amount ? parseFloat(options.amount) : undefined,
-        validate: (input: number) => input > 0 || 'Amount must be greater than 0'
-      },
-      {
-        type: 'password',
-        name: 'password',
-        message: 'Wallet password:',
-        mask: '*'
-      },
-      {
-        type: 'confirm',
-        name: 'confirm',
-        message: 'Confirm transaction?',
-        default: false
-      }
-    ]);
+    if (!SolanaClient.isValidAddress(toAddress)) {
+      printError('Invalid Solana address');
+      return;
+    }
 
-    if (!answers.confirm) {
+    // Show confirmation
+    console.log(chalk.yellow('\n  Transaction Preview:'));
+    console.log(chalk.gray('  ─────────────────────'));
+    console.log(`  ${chalk.white('Send:')}    ${chalk.green(amount)} ${chalk.cyan('TETSUO')}`);
+    console.log(`  ${chalk.white('To:')}      ${chalk.yellow(shortenAddress(toAddress))}`);
+    console.log(`  ${chalk.white('Fee:')}     ${chalk.gray('~0.00025 SOL')}`);
+    console.log();
+
+    const confirm = await ask('Confirm? (y/N): ');
+    if (confirm.toLowerCase() !== 'y' && confirm.toLowerCase() !== 'yes') {
       printWarning('Transaction cancelled');
       return;
     }
 
-    const spinner = ora('Sending transaction...').start();
+    const password = await askPassword('Wallet password: ');
 
     try {
-      // Unlock wallet
-      const unlockedWallet = unlockWallet(activeWallet.name, answers.password);
+      console.log(chalk.gray('\nSigning and sending...\n'));
+
+      const unlockedWallet = unlockWallet(wallet.name, password);
       const keypair = createKeypairFromSecretKey(unlockedWallet.keypair.secretKey);
 
-      // Send transaction
       const config = loadConfig();
       const client = new SolanaClient(config.rpcEndpoint, config.network);
-      const result = await client.sendTetsuo(keypair, answers.to, answers.amount);
+      const result = await client.sendTetsuo(keypair, toAddress, amount);
 
       if (result.success) {
-        spinner.succeed('Transaction sent!');
-        printSuccess(`Sent ${answers.amount} TETSUO to ${shortenAddress(answers.to)}`);
-        console.log(chalk.gray('  Signature: ') + chalk.cyan(result.signature));
+        printSuccess(`Sent ${amount} TETSUO to ${shortenAddress(toAddress)}`);
+        console.log(chalk.gray('  Signature: ') + chalk.cyan(result.signature.slice(0, 32) + '...'));
       } else {
-        spinner.fail('Transaction failed');
-        printError(result.error || 'Unknown error');
+        printError(result.error || 'Transaction failed');
       }
-
     } catch (error) {
-      spinner.fail('Transaction failed');
-      printError(error instanceof Error ? error.message : 'Unknown error');
+      printError(error instanceof Error ? error.message : 'Transaction failed');
     }
-  });
+  }
+});
 
-// ============= HISTORY =============
-program
-  .command('history')
-  .alias('tx')
-  .description('Show transaction history')
-  .option('-l, --limit <limit>', 'Number of transactions', '10')
-  .action(async (options) => {
-    const activeWallet = getActiveWallet();
-    if (!activeWallet) {
-      printError('No active wallet. Create one with: tetsuo new');
+// ============= COMMAND: HISTORY =============
+registerCommand({
+  name: 'history',
+  aliases: ['tx', 'transactions'],
+  description: 'Show recent transactions',
+  usage: '/history [count]',
+  handler: async (args) => {
+    const wallet = getActiveWallet();
+    if (!wallet) {
+      printWarning('No active wallet. Create one with /new');
       return;
     }
+
+    const limit = parseInt(args[0]) || 10;
+    console.log(chalk.gray('\nFetching transactions...\n'));
 
     const config = loadConfig();
     const client = new SolanaClient(config.rpcEndpoint, config.network);
 
-    const spinner = ora('Fetching transactions...').start();
+    try {
+      const transactions = await client.getRecentTransactions(wallet.address, limit);
+      printTransactionHistory(transactions);
+    } catch (error) {
+      printError('Failed to fetch transactions');
+    }
+  }
+});
+
+// ============= COMMAND: DELETE =============
+registerCommand({
+  name: 'delete',
+  aliases: ['remove', 'rm'],
+  description: 'Delete a wallet',
+  usage: '/delete <name>',
+  handler: async (args) => {
+    if (!args[0]) {
+      printError('Please specify wallet name: /delete <name>');
+      return;
+    }
+
+    const confirm = await ask(`Delete wallet "${args[0]}"? This cannot be undone! (yes/N): `);
+    if (confirm !== 'yes') {
+      printWarning('Cancelled');
+      return;
+    }
 
     try {
-      const transactions = await client.getRecentTransactions(
-        activeWallet.address,
-        parseInt(options.limit)
-      );
-
-      spinner.stop();
-      printTransactionHistory(transactions);
-
+      deleteWallet(args[0]);
+      printSuccess(`Wallet "${args[0]}" deleted`);
     } catch (error) {
-      spinner.fail('Failed to fetch transactions');
-      printError(error instanceof Error ? error.message : 'Unknown error');
+      printError(error instanceof Error ? error.message : 'Failed to delete wallet');
     }
+  }
+});
+
+// ============= COMMAND: CLEAR =============
+registerCommand({
+  name: 'clear',
+  aliases: ['cls'],
+  description: 'Clear the screen',
+  usage: '/clear',
+  handler: async () => {
+    console.clear();
+    printLogo();
+    showStatus();
+  }
+});
+
+// ============= COMMAND: EXIT =============
+registerCommand({
+  name: 'exit',
+  aliases: ['quit', 'q'],
+  description: 'Exit the wallet',
+  usage: '/exit',
+  handler: async () => {
+    console.log(chalk.gray('\nGoodbye!\n'));
+    process.exit(0);
+  }
+});
+
+// ============= HELPERS =============
+let rl: readline.Interface;
+
+function initReadline() {
+  rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
   });
+}
 
-// ============= INTERACTIVE MODE =============
-program
-  .command('chat', { isDefault: true })
-  .description('Interactive mode with Grok AI')
-  .action(async () => {
-    clearScreen();
-    printWelcome(
-      getActiveWallet()?.name,
-      getActiveWallet()?.address
-    );
+function ask(question: string): Promise<string> {
+  return new Promise(resolve => {
+    rl.question(chalk.gray(question), answer => {
+      resolve(answer);
+    });
+  });
+}
 
-    const config = loadConfig();
+function askPassword(question: string): Promise<string> {
+  return new Promise(resolve => {
+    process.stdout.write(chalk.gray(question));
 
-    // Use mock client if no API key
-    const grok = config.grokApiKey
-      ? new GrokClient(config.grokApiKey)
-      : new MockGrokClient();
+    const stdin = process.stdin;
+    const wasRaw = stdin.isRaw;
 
-    if (!config.grokApiKey) {
-      printWarning('Grok API key not configured. Using offline mode.');
-      printInfo('Set your API key: export TETSUO_GROK_API_KEY=your-key\n');
+    if (stdin.isTTY) {
+      stdin.setRawMode(true);
     }
 
-    console.log(chalk.gray('Type your commands or questions. Type "exit" to quit.\n'));
+    let password = '';
 
-    // Interactive loop
-    while (true) {
-      const { input } = await inquirer.prompt([
-        {
-          type: 'input',
-          name: 'input',
-          message: chalk.cyan('>'),
-          prefix: ''
+    const onData = (char: Buffer) => {
+      const c = char.toString();
+
+      if (c === '\n' || c === '\r') {
+        stdin.removeListener('data', onData);
+        if (stdin.isTTY) {
+          stdin.setRawMode(wasRaw || false);
         }
-      ]);
-
-      if (input.toLowerCase() === 'exit' || input.toLowerCase() === 'quit') {
-        printInfo('Goodbye!');
-        break;
+        console.log();
+        resolve(password);
+      } else if (c === '\u0003') { // Ctrl+C
+        process.exit();
+      } else if (c === '\u007F') { // Backspace
+        if (password.length > 0) {
+          password = password.slice(0, -1);
+          process.stdout.write('\b \b');
+        }
+      } else {
+        password += c;
+        process.stdout.write('*');
       }
+    };
 
-      if (input.trim() === '') continue;
-
-      const response = await grok.chat(input);
-      printGrokResponse(response.content);
-
-      // Execute parsed command if available
-      if (response.parsedCommand) {
-        await executeCommand(response.parsedCommand);
-      }
-    }
+    stdin.on('data', onData);
   });
+}
 
-// ============= COMMAND EXECUTOR =============
-async function executeCommand(cmd: ParsedCommand): Promise<void> {
-  const activeWallet = getActiveWallet();
+function showStatus() {
+  const wallet = getActiveWallet();
+  if (wallet) {
+    console.log(chalk.gray('  Wallet: ') + chalk.white(wallet.name) +
+                chalk.gray(' | ') + chalk.cyan(shortenAddress(wallet.address)));
+  } else {
+    console.log(chalk.yellow('  No wallet active. Type /new to create one.'));
+  }
+  console.log();
+}
 
-  switch (cmd.action) {
-    case 'balance':
-      if (activeWallet) {
-        const config = loadConfig();
-        const client = new SolanaClient(config.rpcEndpoint, config.network);
-        const bal = await client.getTetsuoBalance(activeWallet.address);
-        printBalanceCard(bal.uiBalance, '0.0000', activeWallet.address);
+// ============= MAIN REPL =============
+async function repl() {
+  console.clear();
+  printLogo();
+  showStatus();
+
+  console.log(chalk.gray('  Type /help for available commands\n'));
+
+  const prompt = () => {
+    const wallet = getActiveWallet();
+    const prefix = wallet ? chalk.cyan(wallet.name) : chalk.yellow('no-wallet');
+    rl.question(`${prefix} ${chalk.gray('>')} `, async (input) => {
+      const trimmed = input.trim();
+
+      if (trimmed === '') {
+        prompt();
+        return;
       }
-      break;
 
-    case 'receive':
-      if (activeWallet) {
-        printQRCode(activeWallet.address);
+      // Handle slash commands
+      if (trimmed.startsWith('/')) {
+        const parts = trimmed.slice(1).split(/\s+/);
+        const cmdName = parts[0];
+        const args = parts.slice(1);
+
+        const cmd = findCommand(cmdName);
+        if (cmd) {
+          await cmd.handler(args);
+        } else {
+          printError(`Unknown command: /${cmdName}. Type /help for commands.`);
+        }
+      } else {
+        // Non-slash input - show hint
+        console.log(chalk.gray('  Commands start with /. Type /help for available commands.'));
       }
-      break;
 
-    case 'help':
-      printHelp();
-      break;
+      prompt();
+    });
+  };
 
-    case 'send':
-      if (cmd.amount && cmd.recipient) {
-        printTransactionConfirm(
-          'Send',
-          cmd.amount.toString(),
-          cmd.token || 'TETSUO',
-          cmd.recipient,
-          '0.00025'
-        );
-      }
-      break;
+  prompt();
+}
+
+// ============= CLI ENTRY =============
+const args = process.argv.slice(2);
+
+if (args.length === 0) {
+  // Interactive mode
+  initReadline();
+  repl();
+} else if (args[0] === '--help' || args[0] === '-h') {
+  printLogo();
+  console.log(chalk.white('Usage:') + chalk.gray(' tetsuo [command]\n'));
+  console.log(chalk.white('Commands:'));
+  console.log(chalk.gray('  (no args)      Interactive mode'));
+  console.log(chalk.gray('  --help         Show this help'));
+  console.log(chalk.gray('  --version      Show version\n'));
+  console.log(chalk.white('Interactive commands:'));
+  commands.forEach(cmd => {
+    console.log(chalk.gray(`  /${cmd.name.padEnd(12)} ${cmd.description}`));
+  });
+  console.log();
+} else if (args[0] === '--version' || args[0] === '-v') {
+  console.log('tetsuo-solana-wallet v1.0.0');
+} else {
+  // Run single command
+  initReadline();
+  const cmdName = args[0].replace(/^\//, '');
+  const cmdArgs = args.slice(1);
+  const cmd = findCommand(cmdName);
+
+  if (cmd) {
+    cmd.handler(cmdArgs).then(() => {
+      rl.close();
+      process.exit(0);
+    });
+  } else {
+    printError(`Unknown command: ${args[0]}`);
+    process.exit(1);
   }
 }
-
-// ============= MAIN =============
-// Check for Grok API key in environment
-const grokApiKey = process.env.TETSUO_GROK_API_KEY;
-if (grokApiKey) {
-  const config = loadConfig();
-  config.grokApiKey = grokApiKey;
-  // Note: We don't save API key to disk
-}
-
-program.parse();

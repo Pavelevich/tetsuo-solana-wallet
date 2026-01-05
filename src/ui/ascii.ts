@@ -39,8 +39,8 @@ export const TETSUO_LOGO_SMALL = `
  */
 export function printLogo(): void {
   console.log(tetsuoGradient(TETSUO_LOGO));
-  console.log(chalk.gray('  Solana Wallet with Grok AI Assistant'));
-  console.log(chalk.gray('  ─────────────────────────────────────\n'));
+  console.log(chalk.gray('  Solana Wallet - 100% Secure & Local'));
+  console.log(chalk.gray('  ────────────────────────────────────\n'));
 }
 
 /**
@@ -166,14 +166,6 @@ export function printInfo(message: string): void {
 }
 
 /**
- * Print Grok AI response
- */
-export function printGrokResponse(message: string): void {
-  const content = chalk.white(message);
-  console.log(chalk.magenta('\n🤖 Grok: ') + content + '\n');
-}
-
-/**
  * Print QR code placeholder (ASCII)
  */
 export function printQRCode(address: string): void {
@@ -263,14 +255,14 @@ ${chalk.cyan('Commands:')}
   ${chalk.white('tetsuo send')}             Send TETSUO tokens
   ${chalk.white('tetsuo receive')}          Show address/QR for receiving
   ${chalk.white('tetsuo history')}          Show transaction history
-  ${chalk.white('tetsuo')}                  Interactive mode with Grok AI
+  ${chalk.white('tetsuo')}                  Interactive mode
 
 ${chalk.cyan('Interactive Mode:')}
 
-  Just type natural language commands:
-  ${chalk.gray('> send 100 TETSUO to <address>')}
-  ${chalk.gray('> what is my balance?')}
-  ${chalk.gray('> show my address')}
+  Use slash commands (Claude Code style):
+  ${chalk.gray('/help')}     Show available commands
+  ${chalk.gray('/balance')}  Check wallet balance
+  ${chalk.gray('/send')}     Send TETSUO tokens
 
 ${chalk.cyan('Options:')}
 
