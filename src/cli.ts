@@ -466,44 +466,288 @@ function showStatus() {
   console.log();
 }
 
+// ============= COMMAND MENU UI (Claude Code Style) =============
+const COL_CMD = 14;  // Command column width
+const COL_DESC = 36; // Description column width
+const MENU_WIDTH = COL_CMD + COL_DESC + 3; // Total menu width
+
+function drawCommandMenu(selectedIndex: number, filter: string = ''): string[] {
+  const lines: string[] = [];
+
+  // Filter commands based on input
+  const filtered = filter
+    ? commands.filter(c => c.name.startsWith(filter.toLowerCase()))
+    : commands;
+
+  if (filtered.length === 0) {
+    return [];
+  }
+
+  // Top separator
+  lines.push(chalk.gray('─'.repeat(MENU_WIDTH)));
+
+  // Command rows
+  filtered.forEach((cmd, i) => {
+    const isSelected = i === selectedIndex;
+    const cmdName = ('/' + cmd.name).padEnd(COL_CMD);
+    const desc = cmd.description.substring(0, COL_DESC).padEnd(COL_DESC);
+
+    if (isSelected) {
+      // Highlighted row - cyan background
+      lines.push(chalk.bgCyan.black(` ${cmdName}${chalk.bgCyan.white(desc)} `));
+    } else {
+      lines.push(chalk.gray(' ') + chalk.white(cmdName) + chalk.gray(desc) + chalk.gray(' '));
+    }
+  });
+
+  // Bottom separator
+  lines.push(chalk.gray('─'.repeat(MENU_WIDTH)));
+  lines.push(chalk.dim(' ↑↓ navigate • enter select • esc cancel'));
+
+  return lines;
+}
+
+function clearMenuLines(lineCount: number) {
+  // Move cursor up and clear each line
+  for (let i = 0; i < lineCount; i++) {
+    process.stdout.write('\x1B[1A'); // Move up
+    process.stdout.write('\x1B[2K'); // Clear line
+  }
+}
+
+// ============= INTERACTIVE MENU PROMPT =============
+async function interactivePrompt(): Promise<string> {
+  return new Promise((resolve) => {
+    const stdin = process.stdin;
+    const stdout = process.stdout;
+
+    const wallet = getActiveWallet();
+    const promptPrefix = wallet ? chalk.cyan(wallet.name) : chalk.yellow('no-wallet');
+    const promptStr = `${promptPrefix} ${chalk.gray('>')} `;
+
+    let input = '';
+    let menuVisible = false;
+    let selectedIndex = 0;
+    let menuLines: string[] = [];
+    let cursorPos = 0;
+
+    // Get filtered commands
+    const getFilteredCommands = () => {
+      const filter = input.startsWith('/') ? input.slice(1) : '';
+      return filter
+        ? commands.filter(c => c.name.startsWith(filter.toLowerCase()))
+        : commands;
+    };
+
+    const redrawPrompt = () => {
+      // Clear current line and redraw prompt with input
+      stdout.write('\r\x1B[2K');
+      stdout.write(promptStr + input);
+    };
+
+    const showMenu = () => {
+      const filter = input.startsWith('/') ? input.slice(1) : '';
+      const filtered = getFilteredCommands();
+
+      if (filtered.length === 0) {
+        hideMenu();
+        return;
+      }
+
+      // Adjust selected index if out of bounds
+      if (selectedIndex >= filtered.length) {
+        selectedIndex = filtered.length - 1;
+      }
+
+      menuLines = drawCommandMenu(selectedIndex, filter);
+
+      // Print menu below prompt
+      stdout.write('\n');
+      menuLines.forEach(line => stdout.write(line + '\n'));
+
+      // Move cursor back to prompt
+      stdout.write(`\x1B[${menuLines.length + 1}A`);
+      stdout.write('\r' + promptStr + input);
+
+      menuVisible = true;
+    };
+
+    const hideMenu = () => {
+      if (menuVisible && menuLines.length > 0) {
+        // Save cursor position
+        stdout.write('\x1B[s');
+        // Move down and clear menu lines
+        stdout.write('\n');
+        for (let i = 0; i < menuLines.length; i++) {
+          stdout.write('\x1B[2K\n');
+        }
+        // Restore cursor position
+        stdout.write('\x1B[u');
+        // Move back up
+        stdout.write(`\x1B[${menuLines.length}A`);
+        redrawPrompt();
+      }
+      menuVisible = false;
+      menuLines = [];
+    };
+
+    const updateMenu = () => {
+      if (menuVisible) {
+        hideMenu();
+        showMenu();
+      }
+    };
+
+    // Write initial prompt
+    stdout.write(promptStr);
+
+    if (!stdin.isTTY) {
+      // Non-interactive mode - use readline
+      const tempRl = readline.createInterface({ input: stdin, output: stdout });
+      tempRl.on('line', (line) => {
+        tempRl.close();
+        resolve(line);
+      });
+      return;
+    }
+
+    stdin.setRawMode(true);
+    stdin.resume();
+
+    const onKeypress = (key: Buffer) => {
+      const char = key.toString();
+
+      // Handle special keys
+      if (char === '\x03') { // Ctrl+C
+        hideMenu();
+        stdin.setRawMode(false);
+        stdin.removeListener('data', onKeypress);
+        process.exit(0);
+      }
+
+      if (char === '\x1B') { // ESC or arrow key sequence
+        // Check if it's an arrow key (ESC [ A/B/C/D)
+        return; // Will be handled in sequence
+      }
+
+      // Arrow key sequences
+      if (char === '\x1B[A') { // Up arrow
+        if (menuVisible) {
+          selectedIndex = Math.max(0, selectedIndex - 1);
+          updateMenu();
+        }
+        return;
+      }
+
+      if (char === '\x1B[B') { // Down arrow
+        if (menuVisible) {
+          const filtered = getFilteredCommands();
+          selectedIndex = Math.min(filtered.length - 1, selectedIndex + 1);
+          updateMenu();
+        }
+        return;
+      }
+
+      if (char === '\r' || char === '\n') { // Enter
+        hideMenu();
+        stdout.write('\n');
+        stdin.setRawMode(false);
+        stdin.removeListener('data', onKeypress);
+
+        // If menu was visible, use selected command
+        if (input === '/' || (input.startsWith('/') && menuVisible)) {
+          const filtered = getFilteredCommands();
+          if (filtered.length > 0 && selectedIndex < filtered.length) {
+            resolve('/' + filtered[selectedIndex].name);
+            return;
+          }
+        }
+        resolve(input);
+        return;
+      }
+
+      if (char === '\x7F' || char === '\b') { // Backspace
+        if (input.length > 0) {
+          input = input.slice(0, -1);
+          redrawPrompt();
+
+          if (input === '' || !input.startsWith('/')) {
+            hideMenu();
+          } else {
+            selectedIndex = 0;
+            updateMenu();
+          }
+        }
+        return;
+      }
+
+      if (char === '\x1B') { // ESC (standalone)
+        if (menuVisible) {
+          hideMenu();
+        }
+        return;
+      }
+
+      // Regular character input
+      if (char >= ' ' && char <= '~') {
+        input += char;
+        redrawPrompt();
+
+        if (input === '/') {
+          selectedIndex = 0;
+          showMenu();
+        } else if (input.startsWith('/')) {
+          selectedIndex = 0;
+          if (menuVisible) {
+            updateMenu();
+          } else {
+            showMenu();
+          }
+        } else if (menuVisible) {
+          hideMenu();
+        }
+      }
+    };
+
+    stdin.on('data', onKeypress);
+  });
+}
+
 // ============= MAIN REPL =============
 async function repl() {
   console.clear();
   printLogo();
   showStatus();
 
-  console.log(chalk.gray('  Type /help for available commands\n'));
+  console.log(chalk.gray('  Type / for commands\n'));
 
-  const prompt = () => {
-    const wallet = getActiveWallet();
-    const prefix = wallet ? chalk.cyan(wallet.name) : chalk.yellow('no-wallet');
-    rl.question(`${prefix} ${chalk.gray('>')} `, async (input) => {
-      const trimmed = input.trim();
+  const prompt = async () => {
+    const input = await interactivePrompt();
+    const trimmed = input.trim();
 
-      if (trimmed === '') {
-        prompt();
-        return;
-      }
-
-      // Handle slash commands
-      if (trimmed.startsWith('/')) {
-        const parts = trimmed.slice(1).split(/\s+/);
-        const cmdName = parts[0];
-        const args = parts.slice(1);
-
-        const cmd = findCommand(cmdName);
-        if (cmd) {
-          await cmd.handler(args);
-        } else {
-          printError(`Unknown command: /${cmdName}. Type /help for commands.`);
-        }
-      } else {
-        // Non-slash input - show hint
-        console.log(chalk.gray('  Commands start with /. Type /help for available commands.'));
-      }
-
+    if (trimmed === '') {
       prompt();
-    });
+      return;
+    }
+
+    // Handle slash commands
+    if (trimmed.startsWith('/')) {
+      const parts = trimmed.slice(1).split(/\s+/);
+      const cmdName = parts[0];
+      const args = parts.slice(1);
+
+      const cmd = findCommand(cmdName);
+      if (cmd) {
+        await cmd.handler(args);
+      } else {
+        printError(`Unknown command: /${cmdName}. Type / to see commands.`);
+      }
+    } else {
+      // Non-slash input - show hint
+      console.log(chalk.gray('  Commands start with /. Type / to see available commands.'));
+    }
+
+    prompt();
   };
 
   prompt();
