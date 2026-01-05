@@ -228,6 +228,105 @@ registerCommand({
   }
 });
 
+// ============= COMMAND: WATCH (LIVE BALANCE) =============
+registerCommand({
+  name: 'watch',
+  aliases: ['live', 'monitor'],
+  description: 'Live balance updates (auto-refresh)',
+  usage: '/watch [interval_seconds]',
+  handler: async (args) => {
+    const wallet = getActiveWallet();
+    if (!wallet) {
+      printWarning('No active wallet. Create one with /new');
+      return;
+    }
+
+    const intervalSec = Math.max(3, Math.min(60, parseInt(args[0]) || 5));
+    const config = loadConfig();
+    const client = new SolanaClient(config.rpcEndpoint, config.network);
+
+    // Calculate how many lines the balance card takes
+    const CARD_HEIGHT = 22; // Lines for the balance card display
+
+    let running = true;
+    let lastUpdate = '';
+
+    const fetchAndDisplay = async () => {
+      try {
+        const [solBalance, tetsuoBalance] = await Promise.all([
+          client.getSolBalance(wallet.address),
+          client.getTetsuoBalance(wallet.address)
+        ]);
+
+        // Clear previous display
+        if (lastUpdate) {
+          // Move cursor up and clear lines
+          process.stdout.write(`\x1B[${CARD_HEIGHT + 3}A`);
+          for (let i = 0; i < CARD_HEIGHT + 3; i++) {
+            process.stdout.write('\x1B[2K\n');
+          }
+          process.stdout.write(`\x1B[${CARD_HEIGHT + 3}A`);
+        }
+
+        printBalanceCard(
+          tetsuoBalance.uiBalance,
+          solBalance.toFixed(4),
+          wallet.address
+        );
+
+        const now = new Date().toLocaleTimeString();
+        console.log(chalk.gray(`\n  Last updated: ${now} • Refreshing every ${intervalSec}s`));
+        console.log(chalk.dim('  Press q or ESC to exit\n'));
+
+        lastUpdate = now;
+      } catch (error) {
+        console.log(chalk.red('  Failed to fetch balance. Retrying...'));
+      }
+    };
+
+    // Initial fetch
+    console.log(chalk.gray('\n  Starting live balance monitor...\n'));
+    await fetchAndDisplay();
+
+    // Set up interval
+    const intervalId = setInterval(async () => {
+      if (running) {
+        await fetchAndDisplay();
+      }
+    }, intervalSec * 1000);
+
+    // Listen for keypress to exit
+    return new Promise<void>((resolve) => {
+      const stdin = process.stdin;
+
+      if (stdin.isTTY) {
+        stdin.setRawMode(true);
+        stdin.resume();
+      }
+
+      const onKey = (key: Buffer) => {
+        const char = key.toString();
+
+        // q, Q, or ESC to exit
+        if (char === 'q' || char === 'Q' || char === '\x1B' || char === '\x03') {
+          running = false;
+          clearInterval(intervalId);
+
+          if (stdin.isTTY) {
+            stdin.setRawMode(false);
+          }
+          stdin.removeListener('data', onKey);
+
+          console.log(chalk.gray('\n  Live monitor stopped.\n'));
+          resolve();
+        }
+      };
+
+      stdin.on('data', onKey);
+    });
+  }
+});
+
 // ============= COMMAND: RECEIVE =============
 registerCommand({
   name: 'receive',
