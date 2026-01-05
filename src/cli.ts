@@ -493,8 +493,8 @@ function drawCommandMenu(selectedIndex: number, filter: string = ''): string[] {
     const desc = cmd.description.substring(0, COL_DESC).padEnd(COL_DESC);
 
     if (isSelected) {
-      // Highlighted row - cyan background
-      lines.push(chalk.bgCyan.black(` ${cmdName}${chalk.bgCyan.white(desc)} `));
+      // Selected row - cyan text color only
+      lines.push(chalk.cyan(' ' + cmdName + desc + ' '));
     } else {
       lines.push(chalk.gray(' ') + chalk.white(cmdName) + chalk.gray(desc) + chalk.gray(' '));
     }
