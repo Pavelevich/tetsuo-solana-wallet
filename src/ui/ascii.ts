@@ -96,8 +96,14 @@ export const TETSUO_LOGO_SMALL = `╔╦╗╔═╗╔╦╗╔═╗╦ ╦╔
 export function printLogo(): void {
   console.log(holographic(TETSUO_LOGO));
   console.log();
-  console.log(chalk.gray('   ◆ Solana Wallet │ 100% Secure & Local ◆'));
-  console.log(chalk.gray('   ' + line('─', 44)));
+  const boxW = 51;
+  const inner = boxW - 2;
+  const content = chalk.bold.white(' S O L A N A   W A L L E T ') + chalk.gray('│') + chalk.green(' SECURE ');
+  const contentLen = 27 + 1 + 8; // visible length
+  const pad = Math.floor((inner - contentLen) / 2);
+  console.log(neonCyan('   ╔' + '═'.repeat(inner) + '╗'));
+  console.log(neonCyan('   ║') + ' '.repeat(pad) + content + ' '.repeat(inner - pad - contentLen) + neonCyan('║'));
+  console.log(neonCyan('   ╚' + '═'.repeat(inner) + '╝'));
   console.log();
 }
 
