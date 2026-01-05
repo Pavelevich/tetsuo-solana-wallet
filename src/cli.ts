@@ -377,6 +377,14 @@ registerCommand({
     const fmtUsd = (n: number) => n >= 1000000 ? `$${(n/1000000).toFixed(2)}M` : n >= 1000 ? `$${(n/1000).toFixed(1)}K` : `$${n.toFixed(2)}`;
     const fmtChange = (c: number) => c >= 0 ? chalk.green(`+${c.toFixed(2)}%`) : chalk.red(`${c.toFixed(2)}%`);
     const fmtVol = (v: number) => v >= 1000000 ? `$${(v/1000000).toFixed(1)}M` : v >= 1000 ? `$${(v/1000).toFixed(0)}K` : `$${v.toFixed(0)}`;
+    const fmtNum = (n: number) => n >= 1000000000 ? `${(n/1000000000).toFixed(1)}B` : n >= 1000000 ? `${(n/1000000).toFixed(1)}M` : n >= 1000 ? `${(n/1000).toFixed(0)}K` : n.toFixed(0);
+
+    // Buy pressure bar (visual indicator)
+    const pressureBar = (buyPct: number, width: number = 20) => {
+      const filled = Math.round((buyPct / 100) * width);
+      const empty = width - filled;
+      return chalk.green('█'.repeat(filled)) + chalk.red('█'.repeat(empty));
+    };
 
     // Main loop - redraw everything each time (simple and reliable)
     while (running) {
@@ -388,24 +396,48 @@ registerCommand({
 
         if (!running) break;
 
-        // Parse data
+        // Parse data - prices
         const price = parseFloat(pair?.priceUsd) || 0;
         const priceNative = parseFloat(pair?.priceNative) || 0;
+
+        // Parse data - price changes
+        const change5m = pair?.priceChange?.m5 || 0;
         const change1h = pair?.priceChange?.h1 || 0;
         const change6h = pair?.priceChange?.h6 || 0;
         const change24h = pair?.priceChange?.h24 || 0;
-        const vol24h = pair?.volume?.h24 || 0;
-        const vol6h = pair?.volume?.h6 || 0;
+
+        // Parse data - volumes
+        const vol5m = pair?.volume?.m5 || 0;
         const vol1h = pair?.volume?.h1 || 0;
+        const vol6h = pair?.volume?.h6 || 0;
+        const vol24h = pair?.volume?.h24 || 0;
+
+        // Parse data - market
         const liq = pair?.liquidity?.usd || 0;
+        const liqBase = pair?.liquidity?.base || 0;  // TETSUO in pool
+        const liqQuote = pair?.liquidity?.quote || 0; // SOL in pool
         const mcap = pair?.marketCap || 0;
         const fdv = pair?.fdv || 0;
-        const buys24h = pair?.txns?.h24?.buys || 0;
-        const sells24h = pair?.txns?.h24?.sells || 0;
+
+        // Parse data - transactions
+        const buys5m = pair?.txns?.m5?.buys || 0;
+        const sells5m = pair?.txns?.m5?.sells || 0;
         const buys1h = pair?.txns?.h1?.buys || 0;
         const sells1h = pair?.txns?.h1?.sells || 0;
-        const buyRatio24 = buys24h + sells24h > 0 ? ((buys24h / (buys24h + sells24h)) * 100).toFixed(0) : '0';
-        const buyRatio1 = buys1h + sells1h > 0 ? ((buys1h / (buys1h + sells1h)) * 100).toFixed(0) : '0';
+        const buys6h = pair?.txns?.h6?.buys || 0;
+        const sells6h = pair?.txns?.h6?.sells || 0;
+        const buys24h = pair?.txns?.h24?.buys || 0;
+        const sells24h = pair?.txns?.h24?.sells || 0;
+
+        // Calculate buy ratios
+        const buyRatio5m = buys5m + sells5m > 0 ? (buys5m / (buys5m + sells5m)) * 100 : 50;
+        const buyRatio1h = buys1h + sells1h > 0 ? (buys1h / (buys1h + sells1h)) * 100 : 50;
+        const buyRatio24h = buys24h + sells24h > 0 ? (buys24h / (buys24h + sells24h)) * 100 : 50;
+
+        // Parse data - pair info
+        const dexId = pair?.dexId || 'unknown';
+        const pairCreatedAt = pair?.pairCreatedAt ? new Date(pair.pairCreatedAt) : null;
+        const pairAge = pairCreatedAt ? Math.floor((Date.now() - pairCreatedAt.getTime()) / (1000 * 60 * 60 * 24)) : 0;
 
         refreshCount++;
         const now = new Date().toLocaleTimeString();
@@ -422,26 +454,42 @@ registerCommand({
         console.log(chalk.green('  └' + '─'.repeat(W) + '┘'));
         console.log();
 
-        // Price
+        // Price section
         console.log(chalk.gray('  PRICE'));
         console.log(chalk.bold.white(`  $${fmtPrice(price)}`) + chalk.gray(`  (${priceNative.toFixed(8)} SOL)`));
-        console.log(`  ${fmtChange(change1h)} ${chalk.dim('1H')}   ${fmtChange(change6h)} ${chalk.dim('6H')}   ${fmtChange(change24h)} ${chalk.dim('24H')}`);
+        console.log(`  ${fmtChange(change5m)} ${chalk.dim('5M')}  ${fmtChange(change1h)} ${chalk.dim('1H')}  ${fmtChange(change6h)} ${chalk.dim('6H')}  ${fmtChange(change24h)} ${chalk.dim('24H')}`);
         console.log();
 
-        // Volume
+        // Volume section
         console.log(chalk.gray('  VOLUME'));
-        console.log(`  ${chalk.yellow(fmtVol(vol24h))} ${chalk.dim('24H')}   ${chalk.yellow(fmtVol(vol6h))} ${chalk.dim('6H')}   ${chalk.yellow(fmtVol(vol1h))} ${chalk.dim('1H')}`);
+        console.log(`  ${chalk.yellow(fmtVol(vol5m))} ${chalk.dim('5M')}   ${chalk.yellow(fmtVol(vol1h))} ${chalk.dim('1H')}   ${chalk.yellow(fmtVol(vol6h))} ${chalk.dim('6H')}   ${chalk.yellow(fmtVol(vol24h))} ${chalk.dim('24H')}`);
         console.log();
 
-        // Market
+        // Market section
         console.log(chalk.gray('  MARKET'));
         console.log(`  ${chalk.dim('MCap:')} ${chalk.white(fmtUsd(mcap))}   ${chalk.dim('FDV:')} ${chalk.white(fmtUsd(fdv))}   ${chalk.dim('Liq:')} ${chalk.white(fmtUsd(liq))}`);
         console.log();
 
-        // Transactions
+        // Liquidity breakdown
+        console.log(chalk.gray('  LIQUIDITY POOL'));
+        console.log(`  ${chalk.cyan(fmtNum(liqBase))} ${chalk.dim('TETSUO')}   ${chalk.magenta(liqQuote.toFixed(2))} ${chalk.dim('SOL')}`);
+        console.log();
+
+        // Buy Pressure Visual
+        console.log(chalk.gray('  BUY PRESSURE'));
+        console.log(`  ${chalk.dim('5M:')}  ${pressureBar(buyRatio5m, 16)} ${chalk.white(buyRatio5m.toFixed(0) + '%')}`);
+        console.log(`  ${chalk.dim('1H:')}  ${pressureBar(buyRatio1h, 16)} ${chalk.white(buyRatio1h.toFixed(0) + '%')}`);
+        console.log(`  ${chalk.dim('24H:')} ${pressureBar(buyRatio24h, 16)} ${chalk.white(buyRatio24h.toFixed(0) + '%')}`);
+        console.log();
+
+        // Transactions section
         console.log(chalk.gray('  TRANSACTIONS'));
-        console.log(`  ${chalk.dim('24H:')} ${chalk.green(buys24h + ' buys')} / ${chalk.red(sells24h + ' sells')} ${chalk.cyan(`(${buyRatio24}% buy)`)}`);
-        console.log(`  ${chalk.dim(' 1H:')} ${chalk.green(buys1h + ' buys')} / ${chalk.red(sells1h + ' sells')} ${chalk.cyan(`(${buyRatio1}% buy)`)}`);
+        console.log(`  ${chalk.dim('5M:')}  ${chalk.green(buys5m)} / ${chalk.red(sells5m)}   ${chalk.dim('1H:')} ${chalk.green(buys1h)} / ${chalk.red(sells1h)}   ${chalk.dim('6H:')} ${chalk.green(buys6h)} / ${chalk.red(sells6h)}   ${chalk.dim('24H:')} ${chalk.green(buys24h)} / ${chalk.red(sells24h)}`);
+        console.log();
+
+        // Pair info
+        console.log(chalk.gray('  PAIR INFO'));
+        console.log(`  ${chalk.dim('DEX:')} ${chalk.cyan(dexId.toUpperCase())}   ${chalk.dim('Age:')} ${chalk.white(pairAge + ' days')}`);
         console.log();
 
         // Footer
