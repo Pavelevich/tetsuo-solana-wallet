@@ -241,14 +241,19 @@ registerCommand({
       return;
     }
 
-    const intervalSec = Math.max(3, Math.min(60, parseInt(args[0]) || 5));
+    const intervalSec = Math.max(2, Math.min(60, parseInt(args[0]) || 2));
     const config = loadConfig();
     const client = new SolanaClient(config.rpcEndpoint, config.network);
 
     let running = true;
     let refreshCount = 0;
 
-    // Set up keypress listener first
+    // Spinner frames
+    const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+    let spinnerIdx = 0;
+    let spinnerInterval: NodeJS.Timeout | null = null;
+
+    // Set up keypress listener
     const stdin = process.stdin;
     if (stdin.isTTY) {
       stdin.setRawMode(true);
@@ -259,6 +264,7 @@ registerCommand({
       const char = key.toString();
       if (char === 'q' || char === 'Q' || char === '\x1B' || char === '\x03') {
         running = false;
+        if (spinnerInterval) clearInterval(spinnerInterval);
       }
     };
     stdin.on('data', onKey);
@@ -269,14 +275,33 @@ registerCommand({
         // Clear screen and show header
         console.clear();
         console.log(chalk.cyan('\n  ◈ LIVE BALANCE MONITOR ◈'));
-        console.log(chalk.gray('  ─'.repeat(30)));
-        console.log(chalk.dim(`  Refreshing every ${intervalSec}s | Press q to exit\n`));
+        console.log(chalk.gray('  ' + '─'.repeat(58)));
+        console.log(chalk.dim(`  Auto-refresh: ${intervalSec}s | Press q to exit\n`));
+
+        // Show animated spinner while fetching
+        process.stdout.write(chalk.cyan(`  ${spinnerFrames[0]} Fetching balance...`));
+        spinnerInterval = setInterval(() => {
+          spinnerIdx = (spinnerIdx + 1) % spinnerFrames.length;
+          process.stdout.write(`\r  ${chalk.cyan(spinnerFrames[spinnerIdx])} ${chalk.gray('Fetching balance...')}`);
+        }, 80);
 
         // Fetch balances
         const [solBalance, tetsuoBalance] = await Promise.all([
           client.getSolBalance(wallet.address),
           client.getTetsuoBalance(wallet.address)
         ]);
+
+        // Stop spinner
+        if (spinnerInterval) {
+          clearInterval(spinnerInterval);
+          spinnerInterval = null;
+        }
+
+        // Clear spinner line and redraw screen
+        console.clear();
+        console.log(chalk.cyan('\n  ◈ LIVE BALANCE MONITOR ◈'));
+        console.log(chalk.gray('  ' + '─'.repeat(58)));
+        console.log(chalk.dim(`  Auto-refresh: ${intervalSec}s | Press q to exit\n`));
 
         // Display balance card
         printBalanceCard(
@@ -287,17 +312,22 @@ registerCommand({
 
         refreshCount++;
         const now = new Date().toLocaleTimeString();
-        console.log(chalk.gray(`  Updated: ${now} (#${refreshCount})`));
+        console.log(chalk.green(`  ✓ Updated: ${now}`) + chalk.gray(` (refresh #${refreshCount})`));
         console.log(chalk.dim('  Press q or ESC to exit'));
 
-      } catch (error) {
-        console.log(chalk.red('\n  Failed to fetch balance. Retrying...\n'));
-      }
+        // Countdown timer
+        for (let i = intervalSec; i > 0 && running; i--) {
+          process.stdout.write(`\r  ${chalk.yellow('○')} Next refresh in ${chalk.white(i)}s...  `);
+          await new Promise(r => setTimeout(r, 1000));
+        }
 
-      // Wait for interval (check every 100ms if we should stop)
-      const waitUntil = Date.now() + intervalSec * 1000;
-      while (running && Date.now() < waitUntil) {
-        await new Promise(r => setTimeout(r, 100));
+      } catch (error) {
+        if (spinnerInterval) {
+          clearInterval(spinnerInterval);
+          spinnerInterval = null;
+        }
+        console.log(chalk.red('\n  ✗ Failed to fetch balance. Retrying...\n'));
+        await new Promise(r => setTimeout(r, 2000));
       }
     }
 
