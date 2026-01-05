@@ -245,85 +245,72 @@ registerCommand({
     const config = loadConfig();
     const client = new SolanaClient(config.rpcEndpoint, config.network);
 
-    // Calculate how many lines the balance card takes
-    const CARD_HEIGHT = 22; // Lines for the balance card display
-
     let running = true;
-    let lastUpdate = '';
+    let refreshCount = 0;
 
-    const fetchAndDisplay = async () => {
+    // Set up keypress listener first
+    const stdin = process.stdin;
+    if (stdin.isTTY) {
+      stdin.setRawMode(true);
+      stdin.resume();
+    }
+
+    const onKey = (key: Buffer) => {
+      const char = key.toString();
+      if (char === 'q' || char === 'Q' || char === '\x1B' || char === '\x03') {
+        running = false;
+      }
+    };
+    stdin.on('data', onKey);
+
+    // Main loop
+    while (running) {
       try {
+        // Clear screen and show header
+        console.clear();
+        console.log(chalk.cyan('\n  ◈ LIVE BALANCE MONITOR ◈'));
+        console.log(chalk.gray('  ─'.repeat(30)));
+        console.log(chalk.dim(`  Refreshing every ${intervalSec}s | Press q to exit\n`));
+
+        // Fetch balances
         const [solBalance, tetsuoBalance] = await Promise.all([
           client.getSolBalance(wallet.address),
           client.getTetsuoBalance(wallet.address)
         ]);
 
-        // Clear previous display
-        if (lastUpdate) {
-          // Move cursor up and clear lines
-          process.stdout.write(`\x1B[${CARD_HEIGHT + 3}A`);
-          for (let i = 0; i < CARD_HEIGHT + 3; i++) {
-            process.stdout.write('\x1B[2K\n');
-          }
-          process.stdout.write(`\x1B[${CARD_HEIGHT + 3}A`);
-        }
-
+        // Display balance card
         printBalanceCard(
           tetsuoBalance.uiBalance,
           solBalance.toFixed(4),
           wallet.address
         );
 
+        refreshCount++;
         const now = new Date().toLocaleTimeString();
-        console.log(chalk.gray(`\n  Last updated: ${now} • Refreshing every ${intervalSec}s`));
-        console.log(chalk.dim('  Press q or ESC to exit\n'));
+        console.log(chalk.gray(`  Updated: ${now} (#${refreshCount})`));
+        console.log(chalk.dim('  Press q or ESC to exit'));
 
-        lastUpdate = now;
       } catch (error) {
-        console.log(chalk.red('  Failed to fetch balance. Retrying...'));
-      }
-    };
-
-    // Initial fetch
-    console.log(chalk.gray('\n  Starting live balance monitor...\n'));
-    await fetchAndDisplay();
-
-    // Set up interval
-    const intervalId = setInterval(async () => {
-      if (running) {
-        await fetchAndDisplay();
-      }
-    }, intervalSec * 1000);
-
-    // Listen for keypress to exit
-    return new Promise<void>((resolve) => {
-      const stdin = process.stdin;
-
-      if (stdin.isTTY) {
-        stdin.setRawMode(true);
-        stdin.resume();
+        console.log(chalk.red('\n  Failed to fetch balance. Retrying...\n'));
       }
 
-      const onKey = (key: Buffer) => {
-        const char = key.toString();
+      // Wait for interval (check every 100ms if we should stop)
+      const waitUntil = Date.now() + intervalSec * 1000;
+      while (running && Date.now() < waitUntil) {
+        await new Promise(r => setTimeout(r, 100));
+      }
+    }
 
-        // q, Q, or ESC to exit
-        if (char === 'q' || char === 'Q' || char === '\x1B' || char === '\x03') {
-          running = false;
-          clearInterval(intervalId);
+    // Cleanup
+    if (stdin.isTTY) {
+      stdin.setRawMode(false);
+    }
+    stdin.removeListener('data', onKey);
 
-          if (stdin.isTTY) {
-            stdin.setRawMode(false);
-          }
-          stdin.removeListener('data', onKey);
-
-          console.log(chalk.gray('\n  Live monitor stopped.\n'));
-          resolve();
-        }
-      };
-
-      stdin.on('data', onKey);
-    });
+    console.clear();
+    printLogo();
+    showStatus();
+    console.log(chalk.gray('  Live monitor stopped.\n'));
   }
 });
 
