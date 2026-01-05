@@ -6,6 +6,9 @@
  * NO external AI APIs - 100% local and secure
  */
 
+// Must be first import to suppress native binding warnings
+import './suppress-warnings.js';
+
 import readline from 'readline';
 import {
   createWallet,
