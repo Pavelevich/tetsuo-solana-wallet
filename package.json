@@ -1,7 +1,7 @@
 {
   "name": "tetsuo-solana-wallet",
   "version": "1.0.0",
-  "description": "Secure CLI wallet for TETSUO on Solana with Grok AI assistant",
+  "description": "Premium CLI wallet for TETSUO token on Solana blockchain",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
@@ -21,11 +21,12 @@
     "solana",
     "wallet",
     "cli",
-    "grok",
-    "ai",
-    "spl-token"
+    "crypto",
+    "blockchain",
+    "spl-token",
+    "trading"
   ],
-  "author": "TETSUO Team",
+  "author": "Pavelevich",
   "license": "MIT",
   "engines": {
     "node": ">=18.0.0"
