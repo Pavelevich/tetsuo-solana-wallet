@@ -383,7 +383,7 @@ registerCommand({
     const pressureBar = (buyPct: number, width: number = 20) => {
       const filled = Math.round((buyPct / 100) * width);
       const empty = width - filled;
-      return chalk.green('█'.repeat(filled)) + chalk.red('█'.repeat(empty));
+      return chalk.green('▓'.repeat(filled)) + chalk.red('░'.repeat(empty));
     };
 
     // Main loop - redraw everything each time (simple and reliable)
