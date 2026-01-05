@@ -6,6 +6,7 @@
 
 import chalk from 'chalk';
 import gradient from 'gradient-string';
+import qrcode from 'qrcode-terminal';
 
 // ═══════════════════════════════════════════════════════════════
 // CONSTANTS
@@ -162,20 +163,6 @@ export function printBalanceCard(
 export function printQRCode(address: string): void {
   const c = (s: string) => chalk.magenta(s);
 
-  // Simple QR pattern
-  const qr = [
-    '█▀▀▀▀▀█ ▄▀▄▀▄ █▀▀▀▀▀█',
-    '█ ███ █ █▄▀▄█ █ ███ █',
-    '█ ▀▀▀ █ ▀▄▀▄▀ █ ▀▀▀ █',
-    '▀▀▀▀▀▀▀ █ █ █ ▀▀▀▀▀▀▀',
-    '█▀▄▀▄▀▀▀▄▀▄▀▄▀▀▄▀▄▀██',
-    '▀▀▀▀▀▀▀ ▀ ▀ ▀ ▀▀▀▀▀▀▀',
-    '█▀▀▀▀▀█ ▀▄█▀▄ █▀▀▀▀▀█',
-    '█ ███ █ █▀▄▀█ █ ███ █',
-    '█ ▀▀▀ █ ▀▄▀▄▀ █ ▀▀▀ █',
-    '▀▀▀▀▀▀▀ ▀▀▀▀▀ ▀▀▀▀▀▀▀'
-  ];
-
   console.log();
   console.log('  ' + chalk.gray(line('░', W)));
   console.log('  ' + chalk.magenta(line('▓', W)));
@@ -186,35 +173,38 @@ export function printQRCode(address: string): void {
   console.log('  ' + boxMid(W, c));
   console.log('  ' + boxEmpty(W, c));
 
-  // QR Code
-  qr.forEach(row => {
-    console.log('  ' + boxRowCenter(chalk.white(row), W, c));
+  // Generate real QR code
+  qrcode.generate(address, { small: true }, (qrString: string) => {
+    const qrLines = qrString.split('\n').filter(l => l.trim());
+    qrLines.forEach(row => {
+      console.log('  ' + boxRowCenter(chalk.white(row), W, c));
+    });
+
+    console.log('  ' + boxEmpty(W, c));
+    console.log('  ' + boxMid(W, c));
+    console.log('  ' + boxEmpty(W, c));
+
+    // Address
+    console.log('  ' + boxRow(chalk.gray('Your Solana Address:'), W, c));
+    console.log('  ' + boxEmpty(W, c));
+
+    // Split address if needed
+    if (address.length <= W - 6) {
+      console.log('  ' + boxRowCenter(chalk.bold.cyan(address), W, c));
+    } else {
+      const mid = Math.ceil(address.length / 2);
+      console.log('  ' + boxRowCenter(chalk.bold.cyan(address.slice(0, mid)), W, c));
+      console.log('  ' + boxRowCenter(chalk.bold.cyan(address.slice(mid)), W, c));
+    }
+
+    console.log('  ' + boxEmpty(W, c));
+    console.log('  ' + boxRowCenter(chalk.dim('Scan with any Solana wallet'), W, c));
+    console.log('  ' + boxEmpty(W, c));
+    console.log('  ' + boxBot(W, c));
+    console.log('  ' + chalk.magenta(line('▓', W)));
+    console.log('  ' + chalk.gray(line('░', W)));
+    console.log();
   });
-
-  console.log('  ' + boxEmpty(W, c));
-  console.log('  ' + boxMid(W, c));
-  console.log('  ' + boxEmpty(W, c));
-
-  // Address
-  console.log('  ' + boxRow(chalk.gray('Your Solana Address:'), W, c));
-  console.log('  ' + boxEmpty(W, c));
-
-  // Split address if needed
-  if (address.length <= W - 6) {
-    console.log('  ' + boxRowCenter(chalk.bold.cyan(address), W, c));
-  } else {
-    const mid = Math.ceil(address.length / 2);
-    console.log('  ' + boxRowCenter(chalk.bold.cyan(address.slice(0, mid)), W, c));
-    console.log('  ' + boxRowCenter(chalk.bold.cyan(address.slice(mid)), W, c));
-  }
-
-  console.log('  ' + boxEmpty(W, c));
-  console.log('  ' + boxRowCenter(chalk.dim('Share this address to receive tokens'), W, c));
-  console.log('  ' + boxEmpty(W, c));
-  console.log('  ' + boxBot(W, c));
-  console.log('  ' + chalk.magenta(line('▓', W)));
-  console.log('  ' + chalk.gray(line('░', W)));
-  console.log();
 }
 
 // ═══════════════════════════════════════════════════════════════
