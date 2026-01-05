@@ -641,7 +641,29 @@ async function interactivePrompt(): Promise<string> {
     const onKeypress = (key: Buffer) => {
       const char = key.toString();
 
-      // Handle escape sequences (arrow keys, ESC)
+      // Handle complete escape sequences that arrive at once
+      if (char === '\x1B[A') { // Up arrow (complete)
+        if (menuVisible) {
+          selectedIndex = Math.max(0, selectedIndex - 1);
+          updateMenu();
+        }
+        return;
+      }
+
+      if (char === '\x1B[B') { // Down arrow (complete)
+        if (menuVisible) {
+          const filtered = getFilteredCommands();
+          selectedIndex = Math.min(filtered.length - 1, selectedIndex + 1);
+          updateMenu();
+        }
+        return;
+      }
+
+      if (char === '\x1B[C' || char === '\x1B[D') { // Left/right arrows - ignore
+        return;
+      }
+
+      // Handle escape sequences that arrive byte by byte
       if (char === '\x1B' || escapeBuffer.length > 0) {
         escapeBuffer += char;
 
